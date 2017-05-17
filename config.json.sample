@@ -1,0 +1,10 @@
+{
+    "Listen": ":8080",
+    "DB": {
+        "ConnInfo": "host=/run/postgresql dbname=urlredir",
+        "Schema": "urlredir"
+    },
+    "RealIPHeader": "X-Forwarded-For",
+    "RemoteUserHeader": "X-Remote-User"
+}
+

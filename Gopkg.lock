@@ -1,0 +1,7 @@
+memo = "f9a9f07200aebaeb4840e863e9419104ba612b49f2f5e5a91dffde8b66fcaa8c"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/lib/pq"
+  packages = [".","oid"]
+  revision = "2704adc878c21e1329f46f6e56a1c387d788ff94"
