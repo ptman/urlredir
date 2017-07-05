@@ -150,38 +150,13 @@ func (*errdb) begin() (Tx, error) {
 	return &errtx{}, nil
 }
 
-type errtx struct{}
-
-func (*errtx) commit() error {
-	return errors.New("Failed to commit")
+// errtx mocks a problematic db transaction
+type errtx struct {
+	Tx
 }
 
 func (*errtx) rollback() error {
 	return errors.New("Failed to rollback")
-}
-
-func (*errtx) addHit(id int64, ip net.IP, agent string, refer *string) error {
-	return errors.New("Failed to add hit")
-}
-
-func (*errtx) addURL(name, url, user string) error {
-	return errors.New("Failed to add URL")
-}
-
-func (*errtx) getURLnID(name string) (string, int64, error) {
-	return "", 0, errors.New("Failed to get URL")
-}
-
-func (*errtx) getIDnUser(name string) (int64, string, error) {
-	return 0, "", errors.New("Failed to get URL")
-}
-
-func (*errtx) removeURL(name string) error {
-	return errors.New("Failed to remove URL")
-}
-
-func (*errtx) urlsForUser(user string) ([]map[string]string, error) {
-	return nil, errors.New("Failed to get URLs")
 }
 
 func TestDbHandler(t *testing.T) {
@@ -211,7 +186,10 @@ func (*notfounddb) begin() (Tx, error) {
 	return &notfoundtx{}, nil
 }
 
-type notfoundtx struct{}
+// notfoundtx mocks database transaction that doesn't return any results
+type notfoundtx struct {
+	Tx
+}
 
 func (*notfoundtx) commit() error {
 	return nil
@@ -221,24 +199,12 @@ func (*notfoundtx) rollback() error {
 	return nil
 }
 
-func (*notfoundtx) addHit(id int64, ip net.IP, agent string, r *string) error {
-	return nil
-}
-
-func (*notfoundtx) addURL(name, url, user string) error {
-	return nil
-}
-
 func (*notfoundtx) getURLnID(name string) (string, int64, error) {
 	return "", 0, sql.ErrNoRows
 }
 
 func (*notfoundtx) getIDnUser(name string) (int64, string, error) {
 	return 0, "", sql.ErrNoRows
-}
-
-func (*notfoundtx) removeURL(name string) error {
-	return nil
 }
 
 func (*notfoundtx) urlsForUser(user string) ([]map[string]string, error) {
@@ -252,8 +218,17 @@ func (*fakedb) begin() (Tx, error) {
 	return &faketx{}, nil
 }
 
+// faketx mocks a somewhat working transaction
 type faketx struct {
 	notfoundtx
+}
+
+func (*faketx) addHit(id int64, ip net.IP, agent string, r *string) error {
+	return nil
+}
+
+func (*faketx) addURL(name, url, user string) error {
+	return nil
 }
 
 func (*faketx) getURLnID(name string) (string, int64, error) {
