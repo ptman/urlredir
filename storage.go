@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net"
@@ -13,7 +14,7 @@ import (
 type Db interface {
 	// begin transaction
 	begin() (Tx, error)
-	//go1.8	beginTx(context.Context) (*Tx, error)
+	beginTx(context.Context) (Tx, error)
 }
 
 // Tx wraps a database transaction for us to enable testing
@@ -102,21 +103,20 @@ func (db *postgresDb) begin() (Tx, error) {
 	return &postgresTx{tx}, nil
 }
 
-/* go1.8
-func (db *postgresDb) beginTx(ctx context.Context) (tx, error) {
+// beginTx begins a cancellable transaction
+func (db *postgresDb) beginTx(ctx context.Context) (Tx, error) {
 	tx, err := db.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	if conf.DB.Schema != "" {
-		if _, err := tx.Exec(fmt.Sprintf("SET search_path TO %s",
-			conf.DB.Schema)); err != nil {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(
+			"SET search_path TO %s", conf.DB.Schema)); err != nil {
 			return nil, err
 		}
 	}
 	return &postgresTx{tx}, nil
 }
-*/
 
 // commit the transaction
 func (tx *postgresTx) commit() error {

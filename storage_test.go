@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"flag"
 	"fmt"
@@ -73,7 +74,7 @@ func TestCommit(t *testing.T) {
 		t.Skip("Skipping db tests in short mode.")
 	}
 
-	tx, err := db.begin()
+	tx, err := db.beginTx(context.Background())
 	if err != nil {
 		t.Fatal("Error beginning transaction:", err)
 	}
@@ -89,7 +90,7 @@ func TestAddURL(t *testing.T) {
 		t.Skip("Skipping db tests in short mode.")
 	}
 
-	tx, err := db.begin()
+	tx, err := db.beginTx(context.Background())
 	if err != nil {
 		t.Fatal("Error beginning transaction:", err)
 	}
@@ -110,7 +111,7 @@ func TestGetURLnID(t *testing.T) {
 		t.Skip("Skipping db tests in short mode.")
 	}
 
-	tx, err := db.begin()
+	tx, err := db.beginTx(context.Background())
 	if err != nil {
 		t.Fatal("Error beginning transaction:", err)
 	}
@@ -141,7 +142,7 @@ func TestGetIDnUser(t *testing.T) {
 		t.Skip("Skipping db tests in short mode.")
 	}
 
-	tx, err := db.begin()
+	tx, err := db.beginTx(context.Background())
 	if err != nil {
 		t.Fatal("Error beginning transaction:", err)
 	}
@@ -172,7 +173,7 @@ func TestRemoveURL(t *testing.T) {
 		t.Skip("Skipping db tests in short mode.")
 	}
 
-	tx, err := db.begin()
+	tx, err := db.beginTx(context.Background())
 	if err != nil {
 		t.Fatal("Error beginning transaction:", err)
 	}
@@ -209,7 +210,7 @@ func TestAddHit(t *testing.T) {
 		t.Skip("Skipping db tests in short mode.")
 	}
 
-	tx, err := db.begin()
+	tx, err := db.beginTx(context.Background())
 	if err != nil {
 		t.Fatal("Error beginning transaction:", err)
 	}
@@ -242,7 +243,7 @@ func TestURLsForUser(t *testing.T) {
 		t.Skip("Skipping db tests in short mode.")
 	}
 
-	tx, err := db.begin()
+	tx, err := db.beginTx(context.Background())
 	if err != nil {
 		t.Fatal("Error beginning transaction:", err)
 	}

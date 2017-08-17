@@ -101,7 +101,7 @@ func remoteUserHandler(header string, next http.Handler) http.HandlerFunc {
 func dbHandler(db Db, next http.Handler) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		tx, err := db.begin()
+		tx, err := db.beginTx(ctx)
 		if err != nil {
 			panic(err)
 		}

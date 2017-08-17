@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -143,11 +144,19 @@ func (*realerrdb) begin() (Tx, error) {
 	return nil, errors.New("No tx for you")
 }
 
+func (d *realerrdb) beginTx(ctx context.Context) (Tx, error) {
+	return d.begin()
+}
+
 // errdb mocks a problematic db connection
 type errdb struct{}
 
 func (*errdb) begin() (Tx, error) {
 	return &errtx{}, nil
+}
+
+func (d *errdb) beginTx(ctx context.Context) (Tx, error) {
+	return d.begin()
 }
 
 // errtx mocks a problematic db transaction
@@ -186,6 +195,10 @@ func (*notfounddb) begin() (Tx, error) {
 	return &notfoundtx{}, nil
 }
 
+func (d *notfounddb) beginTx(ctx context.Context) (Tx, error) {
+	return d.begin()
+}
+
 // notfoundtx mocks database transaction that doesn't return any results
 type notfoundtx struct {
 	Tx
@@ -216,6 +229,10 @@ type fakedb struct{}
 
 func (*fakedb) begin() (Tx, error) {
 	return &faketx{}, nil
+}
+
+func (d *fakedb) beginTx(ctx context.Context) (Tx, error) {
+	return d.begin()
 }
 
 // faketx mocks a somewhat working transaction

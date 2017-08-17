@@ -14,7 +14,7 @@ func TestConfig(t *testing.T) {
 	readConfig(strings.NewReader("{}"), conf)
 
 	js := conf.String()
-	if js != `{"Listen":"","DB":{"ConnInfo":"","Schema":""},"RealIPHeader":"","RemoteUserHeader":""}` {
+	if js != `{"Listen":"","DB":{"ConnInfo":"","Schema":""},"Debug":false,"RealIPHeader":"","RemoteUserHeader":""}` {
 		t.Error("Config: ", js)
 	}
 
