@@ -25,6 +25,8 @@ type config struct {
 		// Schema is the optional PostgreSQL schema to use
 		Schema string
 	}
+	// Debug toggles exposing information over /debug/vars
+	Debug bool
 	// RealIPHeader is the name of the header where proxy supplies real IP
 	RealIPHeader string
 	// RemoteUserHeader it he name of the header where proxy supplies user
@@ -74,15 +76,15 @@ func readConfig(cfile io.Reader, conf *config) {
 
 // setupServeMux returns a set up http.Handler
 func setupServeMux(db Db) http.Handler {
-	mux := http.DefaultServeMux
-
-	expvar.NewString("gitrev").Set(gitRev)
-	expvar.NewString("revdate").Set(revDate.Format(time.RFC3339))
-	expvar.Publish("config", conf)
-	/* go1.8
 	mux := http.NewServeMux()
-	mux.Handle("/debug/vars", expvar.Handler())
-	*/
+
+	if conf.Debug {
+		expvar.NewString("gitrev").Set(gitRev)
+		expvar.NewString("revdate").Set(revDate.Format(time.RFC3339))
+		expvar.Publish("config", conf)
+
+		mux.Handle("/debug/vars", expvar.Handler())
+	}
 
 	handler := dbHandler(db, http.HandlerFunc(indexHandler))
 
@@ -115,10 +117,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	_ = setupServeMux(db)
+	mux := setupServeMux(db)
 
 	log.Print(gitRev)
 	log.Print(revDate.Format(time.RFC3339))
 	log.Println("Listening on", conf.Listen)
-	log.Fatal(http.ListenAndServe(conf.Listen, nil))
+	log.Fatal(http.ListenAndServe(conf.Listen, mux))
 }

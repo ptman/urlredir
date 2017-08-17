@@ -4,6 +4,7 @@
         "ConnInfo": "host=/run/postgresql dbname=urlredir",
         "Schema": "urlredir"
     },
+    "Debug": false,
     "RealIPHeader": "X-Forwarded-For",
     "RemoteUserHeader": "X-Remote-User"
 }
