@@ -1,6 +1,6 @@
 # Copyright (c) 2017 Paul Tötterman <ptman@iki.fi>. All rights reserved.
 GIT_REV:=$(shell git describe --always --dirty)
-REV_DATE:=$(shell { expr $(GIT_REV) : '.*dirty$$' > /dev/null && date -Iseconds; } || { git show --no-patch --date=iso-strict|sed -ne 's/Date:[[:space:]]*\(.*\)/\1/p'; } )
+REV_DATE:=$(shell go run tools/gitrevdate.go)
 GC_FLAGS:=-trimpath $(GOPATH)/src
 LD_FLAGS:=-s -w -X main.gitRev=$(GIT_REV) -X "main.revDateS=$(REV_DATE)"
 

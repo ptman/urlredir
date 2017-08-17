@@ -62,12 +62,11 @@ func readConfigFile(name string, conf *config) {
 
 // readConfig reads config from io.Reader
 func readConfig(cfile io.Reader, conf *config) {
-	const ISO = "2006-01-02T15:04:05-07:00"
 	var err error
 	if err = json.NewDecoder(cfile).Decode(conf); err != nil {
 		log.Fatal(err)
 	}
-	revDate, err = time.Parse(ISO, revDateS)
+	revDate, err = time.Parse(time.RFC3339, revDateS)
 	if err != nil {
 		log.Fatal(err)
 	}
