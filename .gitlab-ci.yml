@@ -1,11 +1,5 @@
 image: golang
 
-before_script:
-  - go get -u github.com/golang/dep/cmd/dep
-  - cp -r . /go/src/urlredir
-  - cd /go/src/urlredir
-
 test:
   script:
-    - dep ensure
     - make test

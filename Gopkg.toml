@@ -1,4 +1,0 @@
-
-[[dependencies]]
-  branch = "master"
-  name = "github.com/lib/pq"
