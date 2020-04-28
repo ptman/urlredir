@@ -1,3 +1,5 @@
 module urlredir
 
-require github.com/lib/pq v1.0.0
+go 1.14
+
+require github.com/lib/pq v1.4.0
