@@ -9,10 +9,6 @@ dependencies outside of the standard library.
 
 ## Building
 
-Get dependencies:
-
-    dep ensure
-
 Read Makefile and build:
 
     make

@@ -33,8 +33,7 @@ lint:
 
 .PHONY: cloc
 cloc:
-	@echo excluding vendor
-	@cloc --exclude-dir=vendor .
+	@cloc .
 	@echo only tests
 	@cloc *_test.go
 
