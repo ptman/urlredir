@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Paul Tötterman <ptman@iki.fi>. All rights reserved.
+// Copyright (c) 2017-2020 Paul Tötterman <ptman@iki.fi>. All rights reserved.
 
 package main
 
@@ -17,14 +17,15 @@ func TestConfig(t *testing.T) {
 	if js != `{"Listen":"","DB":{"ConnInfo":"","Schema":""},"Debug":false,"RealIPHeader":"","RemoteUserHeader":""}` {
 		t.Error("Config: ", js)
 	}
-
 }
 
 func TestConfigFromFile(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping test in short mode.")
 	}
+
 	conf := &config{}
+
 	readConfigFile("config.json.sample", conf)
 }
 

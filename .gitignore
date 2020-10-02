@@ -1,6 +1,5 @@
+/config.json
+/cover.out
+/urlredir
 *.swp
 *~
-vendor/
-config.json
-cover.out
-urlredir

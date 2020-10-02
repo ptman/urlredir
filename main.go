@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Paul Tötterman <ptman@iki.fi>. All rights reserved.
+// Copyright (c) 2017-2020 Paul Tötterman <ptman@iki.fi>. All rights reserved.
 
 package main
 
@@ -14,7 +14,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-// config is the (un)serializable config for urlredir
+// config is the (un)serializable config for urlredir.
 type config struct {
 	// Listen address, e.g. ":8080"
 	Listen string
@@ -33,49 +33,53 @@ type config struct {
 	RemoteUserHeader string
 }
 
+//nolint:gochecknoglobals
 var (
-	// gitRev is set by the build process to the revision being built
+	// gitRev is set by the build process to the revision being built.
 	gitRev string
-	// revDateS is set by the build process to the revision timestamp
+	// revDateS is set by the build process to the revision timestamp.
 	revDateS = "0001-01-01T00:00:00+00:00"
-	// revDate is parsed from RevDateS
+	// revDate is parsed from RevDateS.
 	revDate time.Time
 	conf    config
-	db      Db
+	db      DB
 )
 
-// String() produces JSON for expvar
+// String implements Stringer for expvar, returns JSON.
 func (c config) String() string {
 	b, err := json.Marshal(c)
 	if err != nil {
 		panic(err)
 	}
+
 	return string(b)
 }
 
-// readConfigFile reads config from file
+// readConfigFile reads config from file.
 func readConfigFile(name string, conf *config) {
 	cfile, err := os.Open(name)
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	readConfig(cfile, conf)
 }
 
-// readConfig reads config from io.Reader
+// readConfig reads config from io.Reader.
 func readConfig(cfile io.Reader, conf *config) {
 	var err error
 	if err = json.NewDecoder(cfile).Decode(conf); err != nil {
 		log.Fatal(err)
 	}
+
 	revDate, err = time.Parse(time.RFC3339, revDateS)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-// setupServeMux returns a set up http.Handler
-func setupServeMux(db Db) http.Handler {
+// setupServeMux returns a set up http.Handler.
+func setupServeMux(db DB) http.Handler {
 	mux := http.NewServeMux()
 
 	if conf.Debug {
@@ -104,15 +108,18 @@ func setupServeMux(db Db) http.Handler {
 
 	mux.Handle("/", panicHandler(handler))
 	mux.Handle("/_admin", panicHandler(admin))
+
 	return mux
 }
 
-// main() should be kept small as it is hard to test
+// main should be kept small as it is hard to test.
 func main() {
 	var err error
+
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	readConfigFile("config.json", &conf)
-	db, err = newPostgresDb()
+
+	db, err = newPostgresDB()
 	if err != nil {
 		log.Fatal(err)
 	}

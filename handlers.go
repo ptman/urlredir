@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Paul Tötterman <ptman@iki.fi>. All rights reserved.
+// Copyright (c) 2017-2020 Paul Tötterman <ptman@iki.fi>. All rights reserved.
 
 package main
 
@@ -17,36 +17,38 @@ import (
 	_ "github.com/lib/pq"
 )
 
-// key is used for storing values in context
+// key is used for storing values in context.
 type key int
 
 const (
-	// txKey is key for transaction in context
+	// txKey is key for transaction in context.
 	txKey key = iota
-	// userKey is key for user name in context
+	// userKey is key for user name in context.
 	userKey
 )
 
-// parseIP returns a parsed IP address if possible
+// parseIP returns a parsed IP address if possible.
 func parseIP(s string) (net.IP, error) {
 	inet, _, err := net.SplitHostPort(s)
 	if err != nil {
 		inet = s
 	}
+
 	ip := net.ParseIP(inet)
 	if ip == nil {
-		return nil, fmt.Errorf("Couldn't parse IP: %s", s)
+		return nil, fmt.Errorf("%w ip: %s", ErrInvalidIP, s)
 	}
+
 	return ip, nil
 }
 
-// handleError logs error and writes error response to client
+// handleError logs error and writes error response to client.
 func handleError(w http.ResponseWriter, err error, code int) {
 	log.Print(err)
 	http.Error(w, http.StatusText(code), code)
 }
 
-// panicHandler recovers from panics and returns ISE to clients
+// panicHandler recovers from panics and returns ISE to clients.
 func panicHandler(next http.Handler) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
@@ -56,7 +58,8 @@ func panicHandler(next http.Handler) http.HandlerFunc {
 				case error:
 					err = t
 				default:
-					err = errors.New(fmt.Sprint(t))
+					err = fmt.Errorf("%w: %s", ErrUnknown,
+						t)
 				}
 				handleError(w, err,
 					http.StatusInternalServerError)
@@ -66,7 +69,7 @@ func panicHandler(next http.Handler) http.HandlerFunc {
 	})
 }
 
-// realIPHandler fixes client IP in request when running behind reverse proxy
+// realIPHandler fixes client IP in request when running behind reverse proxy.
 func realIPHandler(header string, next http.Handler) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		realIP := r.Header.Get(header)
@@ -78,7 +81,7 @@ func realIPHandler(header string, next http.Handler) http.HandlerFunc {
 	})
 }
 
-// staticUserHandler sets a static user name in the context, e.g. for testing
+// staticUserHandler sets a static user name in the context, e.g. for testing.
 func staticUserHandler(user string, next http.Handler) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -87,7 +90,7 @@ func staticUserHandler(user string, next http.Handler) http.HandlerFunc {
 	})
 }
 
-// remoteUserHandler sets user name in context based on headers from proxy
+// remoteUserHandler sets user name in context based on headers from proxy.
 func remoteUserHandler(header string, next http.Handler) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -97,8 +100,8 @@ func remoteUserHandler(header string, next http.Handler) http.HandlerFunc {
 	})
 }
 
-// dbHandler opens transaction in context and rollbacks if there's a panic
-func dbHandler(db Db, next http.Handler) http.HandlerFunc {
+// dbHandler opens transaction in context and rollbacks if there's a panic.
+func dbHandler(db DB, next http.Handler) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		tx, err := db.beginTx(ctx)
@@ -117,15 +120,16 @@ func dbHandler(db Db, next http.Handler) http.HandlerFunc {
 		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, txKey,
 			tx)))
 		err = tx.commit()
-		if err != nil && err != sql.ErrTxDone {
+		if err != nil && !errors.Is(err, sql.ErrTxDone) {
 			panic(err)
 		}
 	})
 }
 
-// redirHandler redirects if URL is found in database
+// redirHandler redirects if URL is found in database.
 func redirHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
 	tx, ok := ctx.Value(txKey).(Tx)
 	if !ok {
 		panic("no tx")
@@ -134,6 +138,7 @@ func redirHandler(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Path[1:]
 	agent := r.Header.Get("User-Agent")
 	referer := r.Header.Get("Referer")
+
 	var referrer *string
 
 	if referer != "" {
@@ -141,11 +146,13 @@ func redirHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	url, urlID, err := tx.getURLnID(name)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		if er := tx.rollback(); er != nil {
 			panic(er)
 		}
+
 		http.NotFound(w, r)
+
 		return
 	} else if err != nil {
 		panic(err)
@@ -153,6 +160,7 @@ func redirHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 301 seems to be the best combined with cache-control
 	w.Header().Set("Cache-Control", "private, max-age=90")
+	//nolint:gomnd
 	w.Header().Set("Expires", time.Now().Add(90*time.Second).In(
 		time.UTC).Format(http.TimeFormat))
 	w.Header().Set("Content-Type", "text/html")
@@ -166,12 +174,14 @@ func redirHandler(w http.ResponseWriter, r *http.Request) {
 	if err = tx.addHit(urlID, ip, agent, referrer); err != nil {
 		panic(err)
 	}
+
 	log.Println(r.RemoteAddr, agent, referer, name, url)
 }
 
-// deleteHandler removes a specific URL if authorized
+// deleteHandler removes a specific URL if authorized.
 func deleteHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
 	tx, ok := ctx.Value(txKey).(Tx)
 	if !ok {
 		panic("no tx")
@@ -186,18 +196,22 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 		if er := tx.rollback(); er != nil {
 			panic(er)
 		}
+
 		http.Error(w, "Missing user", http.StatusBadRequest)
+
 		return
 	}
 
 	name := r.URL.Path[1:]
 
 	_, urluser, err := tx.getIDnUser(name)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		if er := tx.rollback(); er != nil {
 			panic(er)
 		}
+
 		http.NotFound(w, r)
+
 		return
 	} else if err != nil {
 		panic(err)
@@ -207,7 +221,9 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 		if er := tx.rollback(); er != nil {
 			panic(er)
 		}
+
 		http.Error(w, "Forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -219,22 +235,22 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println(r.RemoteAddr, "DELETE", name)
 }
 
-// indexHandler delegates to redirHandler or deleteHandler
+// indexHandler delegates to redirHandler or deleteHandler.
 func indexHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "GET" {
+	switch r.Method {
+	case "GET":
 		redirHandler(w, r)
-		return
-	}
-	if r.Method == "DELETE" {
+	case "DELETE":
 		deleteHandler(w, r)
-		return
+	default:
+		http.Error(w, "Bad method", http.StatusBadRequest)
 	}
-	http.Error(w, "Bad method", http.StatusBadRequest)
 }
 
-// adminGetHandler serves admin page
+// adminGetHandler serves admin page.
 func adminGetHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
 	tx, ok := ctx.Value(txKey).(Tx)
 	if !ok {
 		panic("no tx")
@@ -267,37 +283,41 @@ func adminGetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// validateAdminForm perform form parameter validation for admin page
+// validateAdminForm perform form parameter validation for admin page.
 func validateAdminForm(r *http.Request) (string, string, string, error) {
 	name := r.FormValue("name")
 	url := r.FormValue("url")
 	user := r.FormValue("user")
 
 	if name == "" {
-		return "", "", "", errors.New("Missing name")
+		return "", "", "", ErrMissingName
 	}
+
 	if url == "" {
-		return "", "", "", errors.New("Missing URL")
+		return "", "", "", ErrMissingURL
 	}
+
 	if _, err := nurl.Parse(url); err != nil {
-		return "", "", "", errors.New("Malformed URL")
+		return "", "", "", ErrInvalidURL
 	}
+
 	if user == "" {
-		return "", "", "", errors.New("Missing user")
+		return "", "", "", ErrMissingUser
 	}
 
 	return name, url, user, nil
 }
 
-// adminPostHandler inserts URLs to database
+// adminPostHandler inserts URLs to database.
 func adminPostHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
 	tx, ok := ctx.Value(txKey).(Tx)
 	if !ok {
 		panic("no tx")
 	}
 
-	user, ok := ctx.Value(userKey).(string)
+	_, ok = ctx.Value(userKey).(string)
 	if !ok {
 		panic("no user")
 	}
@@ -307,7 +327,9 @@ func adminPostHandler(w http.ResponseWriter, r *http.Request) {
 		if er := tx.rollback(); er != nil {
 			panic(er)
 		}
+
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
@@ -318,15 +340,14 @@ func adminPostHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/_admin", http.StatusSeeOther)
 }
 
-// adminHandler delegates to adminPostHandler or adminGetHandler
+// adminHandler delegates to adminPostHandler or adminGetHandler.
 func adminHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "POST" {
+	switch r.Method {
+	case "POST":
 		adminPostHandler(w, r)
-		return
-	}
-	if r.Method == "GET" {
+	case "GET":
 		adminGetHandler(w, r)
-		return
+	default:
+		http.Error(w, "Bad method", http.StatusBadRequest)
 	}
-	http.Error(w, "Bad method", http.StatusBadRequest)
 }

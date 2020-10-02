@@ -1,4 +1,4 @@
-# Copyright (c) 2017 Paul Tötterman <ptman@iki.fi>. All rights reserved.
+# Copyright (c) 2017-2020 Paul Tötterman <ptman@iki.fi>. All rights reserved.
 GIT_REV:=$(shell git describe --always --dirty)
 REV_DATE:=$(shell go run tools/gitrevdate.go)
 GC_FLAGS:=-trimpath $(GOPATH)/src
@@ -38,7 +38,7 @@ cloc:
 	@cloc *_test.go
 
 .PHONY: docker
-docker: urlredir
+docker:
 	docker build -t urlredir .
 
 .PHONY: clean

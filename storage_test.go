@@ -1,9 +1,10 @@
-// Copyright (c) 2017 Paul Tötterman <ptman@iki.fi>. All rights reserved.
+// Copyright (c) 2017-2020 Paul Tötterman <ptman@iki.fi>. All rights reserved.
 package main
 
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -13,27 +14,32 @@ import (
 	"testing"
 )
 
-// testSetup creates a temporary schema for testing
+const xExampleCom = "http://example.com"
+
+// testSetup creates a temporary schema for testing.
 func testSetup() {
 	readConfigFile("config.json", &conf)
+	//nolint:gosec
 	conf.DB.Schema = "urlredirtest" + strconv.Itoa(rand.Intn(1000))
+
 	var err error
-	db, err = newPostgresDb()
+
+	db, err = newPostgresDB()
 	if err != nil {
 		panic(err)
 	}
 }
 
-// testTeardown drops the temporary schema user for testing
+// testTeardown drops the temporary schema user for testing.
 func testTeardown() {
-	_, err := db.(*postgresDb).db.Exec(fmt.Sprintf("DROP SCHEMA %s CASCADE",
+	_, err := db.(*postgresDB).db.Exec(fmt.Sprintf("DROP SCHEMA %s CASCADE",
 		conf.DB.Schema))
 	if err != nil {
 		panic(err)
 	}
 }
 
-// TestMain runs setup and teardown when not running short tests
+// TestMain runs setup and teardown when not running short tests.
 func TestMain(m *testing.M) {
 	flag.Parse()
 
@@ -50,19 +56,21 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func TestNewPostgresDb(t *testing.T) {
+func TestNewPostgresDB(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping db tests in short mode.")
 	}
 
-	d, err := newPostgresDb()
+	d, err := newPostgresDB()
 	if err != nil {
 		t.Fatal("Error initializing db:", err)
 	}
+
 	tx, err := d.begin()
 	if err != nil {
 		t.Fatal("Error beginning transaction:", err)
 	}
+
 	err = tx.rollback()
 	if err != nil {
 		t.Fatal("Error rolling back transaction:", err)
@@ -95,7 +103,7 @@ func TestAddURL(t *testing.T) {
 		t.Fatal("Error beginning transaction:", err)
 	}
 
-	err = tx.addURL("foo", "http://example.com", "test")
+	err = tx.addURL("foo", xExampleCom, "test")
 	if err != nil {
 		t.Fatal("Error adding URL:", err)
 	}
@@ -117,7 +125,7 @@ func TestGetURLnID(t *testing.T) {
 	}
 
 	// add something to get
-	err = tx.addURL("foo", "http://example.com", "test")
+	err = tx.addURL("foo", xExampleCom, "test")
 	if err != nil {
 		t.Fatal("Error adding URL:", err)
 	}
@@ -127,7 +135,7 @@ func TestGetURLnID(t *testing.T) {
 		t.Fatal("Error getting URL:", err)
 	}
 
-	if url != "http://example.com" {
+	if url != xExampleCom {
 		t.Error("Got wrong URL:", url)
 	}
 
@@ -148,7 +156,7 @@ func TestGetIDnUser(t *testing.T) {
 	}
 
 	// add something to get
-	err = tx.addURL("foo", "http://example.com", "test")
+	err = tx.addURL("foo", xExampleCom, "test")
 	if err != nil {
 		t.Fatal("Error adding URL:", err)
 	}
@@ -179,7 +187,7 @@ func TestRemoveURL(t *testing.T) {
 	}
 
 	// add something to remove
-	err = tx.addURL("foo", "http://example.com", "test")
+	err = tx.addURL("foo", xExampleCom, "test")
 	if err != nil {
 		t.Fatal("Error adding URL:", err)
 	}
@@ -195,7 +203,7 @@ func TestRemoveURL(t *testing.T) {
 	}
 
 	_, _, err = tx.getURLnID("foo")
-	if err != sql.ErrNoRows {
+	if !errors.Is(err, sql.ErrNoRows) {
 		t.Error("Error, should not find URL:", err)
 	}
 
@@ -216,7 +224,7 @@ func TestAddHit(t *testing.T) {
 	}
 
 	// add something that can be hit
-	err = tx.addURL("foo", "http://example.com", "test")
+	err = tx.addURL("foo", xExampleCom, "test")
 	if err != nil {
 		t.Fatal("Error adding URL:", err)
 	}
@@ -226,7 +234,8 @@ func TestAddHit(t *testing.T) {
 		t.Fatal("Error getting URL:", err)
 	}
 
-	referrer := "http://example.org"
+	referrer := xExampleCom
+
 	err = tx.addHit(id, net.IPv4(127, 0, 0, 1), "testagent", &referrer)
 	if err != nil {
 		t.Fatal("Error adding hit:", err)
@@ -249,7 +258,7 @@ func TestURLsForUser(t *testing.T) {
 	}
 
 	// add something to retrieve
-	err = tx.addURL("foo", "http://example.com", "test")
+	err = tx.addURL("foo", xExampleCom, "test")
 	if err != nil {
 		t.Fatal("Error adding URL:", err)
 	}
@@ -267,7 +276,7 @@ func TestURLsForUser(t *testing.T) {
 		t.Error("Got wrong URLs:", urls)
 	}
 
-	if urls[0]["url"] != "http://example.com" {
+	if urls[0]["url"] != xExampleCom {
 		t.Error("Got wrong URLs:", urls)
 	}
 
