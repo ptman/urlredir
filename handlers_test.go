@@ -1,11 +1,10 @@
-// Copyright (c) 2017 Paul Tötterman <ptman@iki.fi>. All rights reserved.
+// Copyright (c) 2017-2020 Paul Tötterman <ptman@iki.fi>. All rights reserved.
 
 package main
 
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -36,12 +35,12 @@ func TestParseIP(t *testing.T) {
 	}
 }
 
-// ipEchoHandler responds with the client IP address
+// ipEchoHandler responds with the client IP address.
 func ipEchoHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, r.RemoteAddr)
 }
 
-// testRequest takes care of some repetitive parts of testing
+// testRequest takes care of some repetitive parts of testing.
 func testRequest(t *testing.T, handler http.Handler, req *http.Request,
 	code int) (*httptest.ResponseRecorder, string) {
 	rr := httptest.NewRecorder()
@@ -73,6 +72,7 @@ func TestRealIPHandler(t *testing.T) {
 	}
 
 	handler = realIPHandler("X-Forwarded-For", handler)
+
 	req.Header.Set("X-Forwarded-For", httptest.DefaultRemoteAddr)
 
 	_, body = testRequest(t, handler, req, http.StatusOK)
@@ -82,9 +82,10 @@ func TestRealIPHandler(t *testing.T) {
 	}
 }
 
-// helloHandler responds with a greeting to the user in context
+// helloHandler responds with a greeting to the user in context.
 func helloHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
 	user, ok := ctx.Value(userKey).(string)
 	if !ok {
 		panic("no user")
@@ -137,18 +138,18 @@ func TestRemoteUserHandler(t *testing.T) {
 	}
 }
 
-// realerrdb mocks a very problematic db connection
+// realerrdb mocks a very problematic db connection.
 type realerrdb struct{}
 
 func (*realerrdb) begin() (Tx, error) {
-	return nil, errors.New("No tx for you")
+	return nil, ErrNoTx
 }
 
 func (d *realerrdb) beginTx(ctx context.Context) (Tx, error) {
 	return d.begin()
 }
 
-// errdb mocks a problematic db connection
+// errdb mocks a problematic db connection.
 type errdb struct{}
 
 func (*errdb) begin() (Tx, error) {
@@ -159,16 +160,16 @@ func (d *errdb) beginTx(ctx context.Context) (Tx, error) {
 	return d.begin()
 }
 
-// errtx mocks a problematic db transaction
+// errtx mocks a problematic db transaction.
 type errtx struct {
 	Tx
 }
 
 func (*errtx) rollback() error {
-	return errors.New("Failed to rollback")
+	return ErrFailedRollback
 }
 
-func TestDbHandler(t *testing.T) {
+func TestDBHandler(t *testing.T) {
 	handler := panicHandler(dbHandler(&realerrdb{},
 		http.HandlerFunc(ipEchoHandler)))
 	req := httptest.NewRequest("GET", "/", nil)
@@ -188,7 +189,7 @@ func TestDbHandler(t *testing.T) {
 	}
 }
 
-// notfounddb mocks a database that doesn't return any results
+// notfounddb mocks a database that doesn't return any results.
 type notfounddb struct{}
 
 func (*notfounddb) begin() (Tx, error) {
@@ -199,7 +200,7 @@ func (d *notfounddb) beginTx(ctx context.Context) (Tx, error) {
 	return d.begin()
 }
 
-// notfoundtx mocks database transaction that doesn't return any results
+// notfoundtx mocks database transaction that doesn't return any results.
 type notfoundtx struct {
 	Tx
 }
@@ -224,7 +225,7 @@ func (*notfoundtx) urlsForUser(user string) ([]map[string]string, error) {
 	return []map[string]string{}, nil
 }
 
-// fakedb mocks a somewhat working db
+// fakedb mocks a somewhat working db.
 type fakedb struct{}
 
 func (*fakedb) begin() (Tx, error) {
@@ -235,7 +236,7 @@ func (d *fakedb) beginTx(ctx context.Context) (Tx, error) {
 	return d.begin()
 }
 
-// faketx mocks a somewhat working transaction
+// faketx mocks a somewhat working transaction.
 type faketx struct {
 	notfoundtx
 }
@@ -273,6 +274,7 @@ func (*faketx) urlsForUser(user string) ([]map[string]string, error) {
 			"hits": "1",
 		},
 	}
+
 	return result, nil
 }
 
@@ -305,12 +307,12 @@ func TestRedirHandler(t *testing.T) {
 
 	rr, _ := testRequest(t, handler, req, http.StatusMovedPermanently)
 
-	if rr.HeaderMap.Get("Location") != "http://example.com" {
-		t.Error("Wrong location header:", rr.HeaderMap.Get("Location"))
+	if rr.Header().Get("Location") != xExampleCom {
+		t.Error("Wrong location header:", rr.Header().Get("Location"))
 	}
 
-	if rr.HeaderMap.Get("Cache-Control") != "private, max-age=90" {
-		t.Error("Wrong cache header:", rr.HeaderMap.Get("Cache-Control"))
+	if rr.Header().Get("Cache-Control") != "private, max-age=90" {
+		t.Error("Wrong cache header:", rr.Header().Get("Cache-Control"))
 	}
 }
 
@@ -362,7 +364,7 @@ func TestIndexHandler(t *testing.T) {
 	testRequest(t, handler, req, http.StatusBadRequest)
 }
 
-// postForm is a test helper for POST requests
+// postForm is a test helper for POST requests.
 func postForm(t *testing.T, handler http.Handler, target string,
 	values url.Values, code int) (*httptest.ResponseRecorder, string) {
 	req := httptest.NewRequest("POST", target,
@@ -411,7 +413,7 @@ func TestAdminHandler(t *testing.T) {
 		"user": {"test"},
 	}, http.StatusBadRequest)
 
-	if body != "Malformed URL" {
+	if body != string(ErrInvalidURL) {
 		t.Error("Wrong body", body)
 	}
 
@@ -421,7 +423,7 @@ func TestAdminHandler(t *testing.T) {
 		"user": {"test"},
 	}, http.StatusBadRequest)
 
-	if body != "Missing URL" {
+	if body != string(ErrMissingURL) {
 		t.Error("Wrong body", body)
 	}
 
@@ -431,7 +433,7 @@ func TestAdminHandler(t *testing.T) {
 		"user": {"test"},
 	}, http.StatusBadRequest)
 
-	if body != "Missing name" {
+	if body != string(ErrMissingName) {
 		t.Error("Wrong body", body)
 	}
 
@@ -441,7 +443,7 @@ func TestAdminHandler(t *testing.T) {
 		"url":  {"http://example.com"},
 	}, http.StatusBadRequest)
 
-	if body != "Missing user" {
+	if body != string(ErrMissingUser) {
 		t.Error("Wrong body", body)
 	}
 
