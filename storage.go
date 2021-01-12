@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2020 Paul Tötterman <ptman@iki.fi>. All rights reserved.
+// Copyright (c) 2017-2021 Paul Tötterman <ptman@iki.fi>. All rights reserved.
 
 package main
 
@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+
+	"github.com/pkg/errors"
 )
 
 // DB wraps a database provider for us to enable testing.
@@ -69,24 +71,24 @@ CREATE TABLE IF NOT EXISTS hits (
 
 	db, err := sql.Open("postgres", conf.DB.ConnInfo)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	if conf.DB.Schema != "" {
 		if _, err = db.Exec(fmt.Sprintf(
 			"CREATE SCHEMA IF NOT EXISTS %s",
 			conf.DB.Schema)); err != nil {
-			return nil, err
+			return nil, errors.WithStack(err)
 		}
 
 		if _, err = db.Exec(fmt.Sprintf("SET search_path TO %s",
 			conf.DB.Schema)); err != nil {
-			return nil, err
+			return nil, errors.WithStack(err)
 		}
 	}
 
 	if _, err = db.Exec(createTables); err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	return &postgresDB{db}, nil
@@ -96,13 +98,13 @@ CREATE TABLE IF NOT EXISTS hits (
 func (db *postgresDB) begin() (Tx, error) {
 	tx, err := db.db.Begin()
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	if conf.DB.Schema != "" {
 		if _, err = tx.Exec(fmt.Sprintf("SET search_path TO %s",
 			conf.DB.Schema)); err != nil {
-			return nil, err
+			return nil, errors.WithStack(err)
 		}
 	}
 
@@ -113,13 +115,13 @@ func (db *postgresDB) begin() (Tx, error) {
 func (db *postgresDB) beginTx(ctx context.Context) (Tx, error) {
 	tx, err := db.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	if conf.DB.Schema != "" {
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf(
 			"SET search_path TO %s", conf.DB.Schema)); err != nil {
-			return nil, err
+			return nil, errors.WithStack(err)
 		}
 	}
 
@@ -147,7 +149,7 @@ func (tx *postgresTx) getURLnID(name string) (string, int64, error) {
 
 	err := tx.tx.QueryRow(q, name).Scan(&id, &url)
 
-	return url, id, err
+	return url, id, errors.WithStack(err)
 }
 
 // getIDnUser returns the URL's ID and user.
@@ -161,7 +163,7 @@ func (tx *postgresTx) getIDnUser(name string) (int64, string, error) {
 
 	err := tx.tx.QueryRow(q, name).Scan(&id, &user)
 
-	return id, user, err
+	return id, user, errors.WithStack(err)
 }
 
 // removeURL removes the URL speficied.
@@ -170,7 +172,7 @@ func (tx *postgresTx) removeURL(name string) error {
 
 	_, err := tx.tx.Exec(q, name)
 
-	return err
+	return errors.WithStack(err)
 }
 
 // addHit adds a hit to the specific URL.
@@ -182,7 +184,7 @@ VALUES ($1, $2, $3, $4)`
 
 	_, err := tx.tx.Exec(q, urlID, ip.String(), agent, referrer)
 
-	return err
+	return errors.WithStack(err)
 }
 
 // addURL adds a new URL to the database.
@@ -191,7 +193,7 @@ func (tx *postgresTx) addURL(name, url, user string) error {
 
 	_, err := tx.tx.Exec(q, name, url, user)
 
-	return err
+	return errors.WithStack(err)
 }
 
 // urlsForUser returns all URLs for the given user.
@@ -201,7 +203,7 @@ func (tx *postgresTx) urlsForUser(user string) ([]map[string]string, error) {
 	//nolint:sqlclosecheck
 	rows, err := tx.tx.Query(q, user)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	defer func(rows *sql.Rows) {
@@ -219,7 +221,7 @@ func (tx *postgresTx) urlsForUser(user string) ([]map[string]string, error) {
 		)
 
 		if err = rows.Scan(&name, &url, &hits); err != nil {
-			return nil, err
+			return nil, errors.WithStack(err)
 		}
 
 		urls = append(urls, map[string]string{
@@ -231,7 +233,7 @@ func (tx *postgresTx) urlsForUser(user string) ([]map[string]string, error) {
 
 	err = rows.Err()
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	return urls, nil

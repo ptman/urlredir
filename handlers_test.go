@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2020 Paul Tötterman <ptman@iki.fi>. All rights reserved.
+// Copyright (c) 2017-2021 Paul Tötterman <ptman@iki.fi>. All rights reserved.
 
 package main
 
@@ -43,6 +43,8 @@ func ipEchoHandler(w http.ResponseWriter, r *http.Request) {
 // testRequest takes care of some repetitive parts of testing.
 func testRequest(t *testing.T, handler http.Handler, req *http.Request,
 	code int) (*httptest.ResponseRecorder, string) {
+	t.Helper()
+
 	rr := httptest.NewRecorder()
 
 	handler.ServeHTTP(rr, req)
@@ -280,27 +282,25 @@ func (*faketx) urlsForUser(user string) ([]map[string]string, error) {
 
 func TestRedirHandler(t *testing.T) {
 	// missing dbHandler
-	handler := panicHandler(http.HandlerFunc(redirHandler))
+	handler := panicHandler(withError(redirHandler))
 	req := httptest.NewRequest("GET", "/", nil)
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
 	// problematic db
-	handler = panicHandler(dbHandler(&errdb{},
-		http.HandlerFunc(redirHandler)))
+	handler = panicHandler(dbHandler(&errdb{}, withError(redirHandler)))
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
 	// missing URL
 	handler = panicHandler(dbHandler(&notfounddb{},
-		http.HandlerFunc(redirHandler)))
+		withError(redirHandler)))
 	req = httptest.NewRequest("GET", "/foo", nil)
 
 	testRequest(t, handler, req, http.StatusNotFound)
 
 	// everything ok
-	handler = panicHandler(dbHandler(&fakedb{},
-		http.HandlerFunc(redirHandler)))
+	handler = panicHandler(dbHandler(&fakedb{}, withError(redirHandler)))
 	req = httptest.NewRequest("GET", "/foo", nil)
 
 	req.Header.Set("Referer", "http://example.org")
@@ -318,39 +318,38 @@ func TestRedirHandler(t *testing.T) {
 
 func TestDeleteHandler(t *testing.T) {
 	// missing dbHandler
-	handler := panicHandler(http.HandlerFunc(redirHandler))
+	handler := panicHandler(withError(redirHandler))
 	req := httptest.NewRequest("DELETE", "/foo", nil)
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
 	// missing user
-	handler = panicHandler(dbHandler(&errdb{},
-		http.HandlerFunc(deleteHandler)))
+	handler = panicHandler(dbHandler(&errdb{}, withError(deleteHandler)))
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
 	// empty user
 	handler = panicHandler(remoteUserHandler("X-Remote-User",
-		dbHandler(&fakedb{}, http.HandlerFunc(deleteHandler))))
+		dbHandler(&fakedb{}, withError(deleteHandler))))
 
 	testRequest(t, handler, req, http.StatusBadRequest)
 
 	// wrong user
 	handler = panicHandler(staticUserHandler("bar", dbHandler(&fakedb{},
-		http.HandlerFunc(deleteHandler))))
+		withError(deleteHandler))))
 
 	testRequest(t, handler, req, http.StatusForbidden)
 
 	// everythink ok
 	handler = panicHandler(staticUserHandler("test", dbHandler(&fakedb{},
-		http.HandlerFunc(deleteHandler))))
+		withError(deleteHandler))))
 
 	testRequest(t, handler, req, http.StatusOK)
 }
 
 func TestIndexHandler(t *testing.T) {
 	handler := panicHandler(staticUserHandler("test", dbHandler(&fakedb{},
-		http.HandlerFunc(indexHandler))))
+		withError(indexHandler))))
 	req := httptest.NewRequest("GET", "/foo", nil)
 
 	testRequest(t, handler, req, http.StatusMovedPermanently)
@@ -365,8 +364,11 @@ func TestIndexHandler(t *testing.T) {
 }
 
 // postForm is a test helper for POST requests.
+//nolint:unparam
 func postForm(t *testing.T, handler http.Handler, target string,
 	values url.Values, code int) (*httptest.ResponseRecorder, string) {
+	t.Helper()
+
 	req := httptest.NewRequest("POST", target,
 		strings.NewReader(values.Encode()))
 
@@ -377,26 +379,26 @@ func postForm(t *testing.T, handler http.Handler, target string,
 
 func TestAdminHandler(t *testing.T) {
 	// missing dbHandler
-	handler := panicHandler(http.HandlerFunc(adminHandler))
+	handler := panicHandler(withError(adminHandler))
 	req := httptest.NewRequest("GET", "/_admin", nil)
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
 	// missing user
 	handler = panicHandler(dbHandler(&errdb{},
-		http.HandlerFunc(adminHandler)))
+		withError(adminHandler)))
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
 	// ok GET request
 	handler = panicHandler(staticUserHandler("test", dbHandler(&fakedb{},
-		http.HandlerFunc(adminHandler))))
+		withError(adminHandler))))
 
 	testRequest(t, handler, req, http.StatusOK)
 
 	// wrong HTTP method
 	handler = panicHandler(staticUserHandler("test", dbHandler(&fakedb{},
-		http.HandlerFunc(adminHandler))))
+		withError(adminHandler))))
 	req = httptest.NewRequest("HEAD", "/_admin", nil)
 
 	testRequest(t, handler, req, http.StatusBadRequest)

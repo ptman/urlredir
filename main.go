@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2020 Paul Tötterman <ptman@iki.fi>. All rights reserved.
+// Copyright (c) 2017-2021 Paul Tötterman <ptman@iki.fi>. All rights reserved.
 
 package main
 
@@ -90,13 +90,13 @@ func setupServeMux(db DB) http.Handler {
 		mux.Handle("/debug/vars", expvar.Handler())
 	}
 
-	handler := dbHandler(db, http.HandlerFunc(indexHandler))
+	handler := dbHandler(db, withError(indexHandler))
 
 	if conf.RealIPHeader != "" {
 		handler = realIPHandler(conf.RealIPHeader, handler)
 	}
 
-	admin := dbHandler(db, http.HandlerFunc(adminHandler))
+	admin := dbHandler(db, withError(adminHandler))
 
 	if conf.RemoteUserHeader != "" {
 		handler = remoteUserHandler(conf.RemoteUserHeader, handler)

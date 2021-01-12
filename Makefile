@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2020 Paul Tötterman <ptman@iki.fi>. All rights reserved.
+# Copyright (c) 2017-2021 Paul Tötterman <ptman@iki.fi>. All rights reserved.
 GIT_REV:=$(shell git describe --always --dirty)
 REV_DATE:=$(shell go run tools/gitrevdate.go)
 GC_FLAGS:=-trimpath $(GOPATH)/src
@@ -16,20 +16,20 @@ run: urlredir
 
 .PHONY: test
 test:
-	go test -short
+	CGO_ENABLED=0 go test -short
 
 .PHONY: testall
 testall:
-	go test
+	CGO_ENABLED=0 go test
 
 .PHONY: cover
 cover:
-	go test -coverprofile cover.out
-	go tool cover -html cover.out
+	CGO_ENABLED=0 go test -coverprofile cover.out
+	CGO_ENABLED=0 go tool cover -html cover.out
 
 .PHONY: lint
 lint:
-	gometalinter
+	CGO_ENABLED=0 golangci-lint run --enable-all --disable paralleltest,testpackage,exhaustivestruct,forbidigo
 
 .PHONY: cloc
 cloc:
