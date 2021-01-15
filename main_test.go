@@ -32,13 +32,15 @@ func TestConfigFromFile(t *testing.T) {
 func TestSetupServeMux(t *testing.T) {
 	mux := setupServeMux(&fakedb{}).(*http.ServeMux)
 
-	_, pattern := mux.Handler(httptest.NewRequest("GET", "/foo", nil))
+	_, pattern := mux.Handler(httptest.NewRequest(http.MethodGet, "/foo",
+		nil))
 
 	if pattern != "/" {
 		t.Error("Wrong pattern:", pattern)
 	}
 
-	_, pattern = mux.Handler(httptest.NewRequest("GET", "/_admin", nil))
+	_, pattern = mux.Handler(httptest.NewRequest(http.MethodGet, "/_admin",
+		nil))
 
 	if pattern != "/_admin" {
 		t.Error("Wrong pattern:", pattern)

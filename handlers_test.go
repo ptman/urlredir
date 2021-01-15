@@ -64,7 +64,7 @@ func testRequest(t *testing.T, handler http.Handler, req *http.Request,
 
 func TestRealIPHandler(t *testing.T) {
 	handler := http.HandlerFunc(ipEchoHandler)
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "::1"
 
 	_, body := testRequest(t, handler, req, http.StatusOK)
@@ -98,7 +98,7 @@ func helloHandler(w http.ResponseWriter, r *http.Request) {
 
 func TestPanicHandler(t *testing.T) {
 	handler := panicHandler(http.HandlerFunc(ipEchoHandler))
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
 	testRequest(t, handler, req, http.StatusOK)
 
@@ -113,7 +113,7 @@ func TestPanicHandler(t *testing.T) {
 
 func TestStaticUserHandler(t *testing.T) {
 	handler := panicHandler(http.HandlerFunc(helloHandler))
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
@@ -129,7 +129,7 @@ func TestStaticUserHandler(t *testing.T) {
 func TestRemoteUserHandler(t *testing.T) {
 	handler := remoteUserHandler("X-Remote-User",
 		http.HandlerFunc(helloHandler))
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
 	req.Header.Set("X-Remote-User", "foo")
 
@@ -174,7 +174,7 @@ func (*errtx) rollback() error {
 func TestDBHandler(t *testing.T) {
 	handler := panicHandler(dbHandler(&realerrdb{},
 		http.HandlerFunc(ipEchoHandler)))
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
@@ -283,7 +283,7 @@ func (*faketx) urlsForUser(user string) ([]map[string]string, error) {
 func TestRedirHandler(t *testing.T) {
 	// missing dbHandler
 	handler := panicHandler(withError(redirHandler))
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
@@ -295,13 +295,13 @@ func TestRedirHandler(t *testing.T) {
 	// missing URL
 	handler = panicHandler(dbHandler(&notfounddb{},
 		withError(redirHandler)))
-	req = httptest.NewRequest("GET", "/foo", nil)
+	req = httptest.NewRequest(http.MethodGet, "/foo", nil)
 
 	testRequest(t, handler, req, http.StatusNotFound)
 
 	// everything ok
 	handler = panicHandler(dbHandler(&fakedb{}, withError(redirHandler)))
-	req = httptest.NewRequest("GET", "/foo", nil)
+	req = httptest.NewRequest(http.MethodGet, "/foo", nil)
 
 	req.Header.Set("Referer", "http://example.org")
 
@@ -319,7 +319,7 @@ func TestRedirHandler(t *testing.T) {
 func TestDeleteHandler(t *testing.T) {
 	// missing dbHandler
 	handler := panicHandler(withError(redirHandler))
-	req := httptest.NewRequest("DELETE", "/foo", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/foo", nil)
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
@@ -350,15 +350,15 @@ func TestDeleteHandler(t *testing.T) {
 func TestIndexHandler(t *testing.T) {
 	handler := panicHandler(staticUserHandler("test", dbHandler(&fakedb{},
 		withError(indexHandler))))
-	req := httptest.NewRequest("GET", "/foo", nil)
+	req := httptest.NewRequest(http.MethodGet, "/foo", nil)
 
 	testRequest(t, handler, req, http.StatusMovedPermanently)
 
-	req = httptest.NewRequest("DELETE", "/foo", nil)
+	req = httptest.NewRequest(http.MethodDelete, "/foo", nil)
 
 	testRequest(t, handler, req, http.StatusOK)
 
-	req = httptest.NewRequest("POST", "/foo", nil)
+	req = httptest.NewRequest(http.MethodPost, "/foo", nil)
 
 	testRequest(t, handler, req, http.StatusBadRequest)
 }
@@ -369,7 +369,7 @@ func postForm(t *testing.T, handler http.Handler, target string,
 	values url.Values, code int) (*httptest.ResponseRecorder, string) {
 	t.Helper()
 
-	req := httptest.NewRequest("POST", target,
+	req := httptest.NewRequest(http.MethodPost, target,
 		strings.NewReader(values.Encode()))
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -380,7 +380,7 @@ func postForm(t *testing.T, handler http.Handler, target string,
 func TestAdminHandler(t *testing.T) {
 	// missing dbHandler
 	handler := panicHandler(withError(adminHandler))
-	req := httptest.NewRequest("GET", "/_admin", nil)
+	req := httptest.NewRequest(http.MethodGet, "/_admin", nil)
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
@@ -399,12 +399,12 @@ func TestAdminHandler(t *testing.T) {
 	// wrong HTTP method
 	handler = panicHandler(staticUserHandler("test", dbHandler(&fakedb{},
 		withError(adminHandler))))
-	req = httptest.NewRequest("HEAD", "/_admin", nil)
+	req = httptest.NewRequest(http.MethodHead, "/_admin", nil)
 
 	testRequest(t, handler, req, http.StatusBadRequest)
 
 	// missing POST form
-	req = httptest.NewRequest("POST", "/_admin", nil)
+	req = httptest.NewRequest(http.MethodPost, "/_admin", nil)
 
 	testRequest(t, handler, req, http.StatusBadRequest)
 

@@ -266,9 +266,9 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) error {
 // indexHandler delegates to redirHandler or deleteHandler.
 func indexHandler(w http.ResponseWriter, r *http.Request) error {
 	switch r.Method {
-	case "GET":
+	case http.MethodGet:
 		return redirHandler(w, r)
-	case "DELETE":
+	case http.MethodDelete:
 		return deleteHandler(w, r)
 	default:
 		return &HTTPError{
@@ -380,9 +380,9 @@ func adminPostHandler(w http.ResponseWriter, r *http.Request) error {
 // adminHandler delegates to adminPostHandler or adminGetHandler.
 func adminHandler(w http.ResponseWriter, r *http.Request) error {
 	switch r.Method {
-	case "POST":
+	case http.MethodPost:
 		return adminPostHandler(w, r)
-	case "GET":
+	case http.MethodGet:
 		return adminGetHandler(w, r)
 	default:
 		return &HTTPError{Code: http.StatusBadRequest}
