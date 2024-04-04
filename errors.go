@@ -1,9 +1,9 @@
-// Copyright (c) 2020-2021 Paul Tötterma <ptman@iki.fi>. All rights reserved.
+// Copyright © Paul Tötterman <paul.totterman@gmail.com>. All rights reserved.
 
 package main
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 )
 
@@ -45,15 +45,17 @@ func (e *HTTPError) polish() {
 }
 
 // ServerHTTP implements http.Handler.
-//nolint:unparam
 func (e *HTTPError) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	e.polish()
 
-	if e.Err != nil {
-		log.Printf("%+v", e.Err)
-	} else {
-		log.Print(e.Message)
-	}
+	slog.Error("error",
+		slog.String("method", r.Method),
+		slog.String("url", r.RequestURI),
+		slog.Int("status", e.Code),
+		slog.String("remote", r.RemoteAddr),
+		slog.String("message", e.Message),
+		slog.Any("err", e.Err),
+	)
 
 	http.Error(w, e.Message, e.Code)
 }

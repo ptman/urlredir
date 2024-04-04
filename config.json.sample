@@ -1,9 +1,6 @@
 {
     "Listen": ":8080",
-    "DB": {
-        "ConnInfo": "host=/run/postgresql dbname=urlredir",
-        "Schema": "urlredir"
-    },
+    "DB": "host=/run/postgresql dbname=urlredir",
     "Debug": false,
     "RealIPHeader": "X-Forwarded-For",
     "RemoteUserHeader": "X-Remote-User"

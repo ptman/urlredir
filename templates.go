@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2020 Paul Tötterman <ptman@iki.fi>. All rights reserved.
+// Copyright © Paul Tötterman <paul.totterman@gmail.com>. All rights reserved.
 
 package main
 

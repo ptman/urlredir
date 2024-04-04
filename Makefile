@@ -1,14 +1,10 @@
-# Copyright (c) 2017-2021 Paul Tötterman <ptman@iki.fi>. All rights reserved.
-GIT_REV:=$(shell git describe --always --dirty)
-REV_DATE:=$(shell go run tools/gitrevdate.go)
-GC_FLAGS:=-trimpath $(GOPATH)/src
-LD_FLAGS:=-s -w -X main.gitRev=$(GIT_REV) -X "main.revDateS=$(REV_DATE)"
+# Copyright © Paul Tötterman <paul.totterman@gmail.com>. All rights reserved.
 
 .PHONY: all
 all: test urlredir
 
-urlredir: main.go storage.go templates.go handlers.go
-	CGO_ENABLED=0 go build -gcflags '$(GC_FLAGS)' -ldflags '$(LD_FLAGS)' -o $@ $^
+urlredir: main.go storage.go templates.go handlers.go errors.go
+	CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o $@
 
 .PHONY: run
 run: urlredir
@@ -16,11 +12,7 @@ run: urlredir
 
 .PHONY: test
 test:
-	CGO_ENABLED=0 go test -short
-
-.PHONY: testall
-testall:
-	CGO_ENABLED=0 go test
+	CGO_ENABLED=0 go test -v
 
 .PHONY: cover
 cover:
@@ -29,7 +21,7 @@ cover:
 
 .PHONY: lint
 lint:
-	CGO_ENABLED=0 golangci-lint run --enable-all --disable paralleltest,testpackage,exhaustivestruct,forbidigo
+	CGO_ENABLED=0 golangci-lint run --enable-all --disable nosnakecase,ifshort,deadcode,scopelint,interfacer,maligned,exhaustivestruct,varcheck,golint,structcheck --disable varnamelen,paralleltest,funlen,depguard,ireturn,musttag
 
 .PHONY: cloc
 cloc:
@@ -44,3 +36,7 @@ docker:
 .PHONY: clean
 clean:
 	rm -f urlredir cover.out
+
+.PHONY: cleanschemas
+cleanschemas:
+	@psql urlredir -c '\t on' -c '\timing off' -c "SELECT schema_name FROM information_schema.schemata where schema_name ILIKE 'test%%'" | tail -n +2 |while read -r schema; do if [ -z "$${schema}" ]; then continue; fi; psql urlredir -c "DROP SCHEMA \"$${schema}\" CASCADE"; done

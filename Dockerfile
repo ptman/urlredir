@@ -1,5 +1,5 @@
-# Copyright (c) 2017-2020 Paul Tötterman <ptman@iki.fi>. All rights reserved.
-FROM golang:1.15-alpine AS builder
+# Copyright © Paul Tötterman <paul.totterman@gmail.com>. All rights reserved.
+FROM golang:1.22-alpine3.19 AS builder
 
 ENV CGO_ENABLED=0
 COPY . ${GOPATH}/urlredir

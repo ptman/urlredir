@@ -1,13 +1,10 @@
-// Copyright (c) 2017-2021 Paul Tötterman <ptman@iki.fi>. All rights reserved.
+// Copyright © Paul Tötterman <paul.totterman@gmail.com>. All rights reserved.
 
 package main
 
 import (
-	"context"
-	"database/sql"
 	"fmt"
-	"io/ioutil"
-	"net"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -42,7 +39,8 @@ func ipEchoHandler(w http.ResponseWriter, r *http.Request) {
 
 // testRequest takes care of some repetitive parts of testing.
 func testRequest(t *testing.T, handler http.Handler, req *http.Request,
-	code int) (*httptest.ResponseRecorder, string) {
+	code int,
+) (*httptest.ResponseRecorder, string) {
 	t.Helper()
 
 	rr := httptest.NewRecorder()
@@ -54,7 +52,7 @@ func testRequest(t *testing.T, handler http.Handler, req *http.Request,
 			code)
 	}
 
-	body, err := ioutil.ReadAll(rr.Body)
+	body, err := io.ReadAll(rr.Body)
 	if err != nil {
 		panic(err)
 	}
@@ -62,8 +60,8 @@ func testRequest(t *testing.T, handler http.Handler, req *http.Request,
 	return rr, strings.TrimSpace(string(body))
 }
 
-func TestRealIPHandler(t *testing.T) {
-	handler := http.HandlerFunc(ipEchoHandler)
+func TestRealIPMiddleware(t *testing.T) {
+	handler := http.Handler(http.HandlerFunc(ipEchoHandler))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "::1"
 
@@ -73,7 +71,7 @@ func TestRealIPHandler(t *testing.T) {
 		t.Error("RemoteAddr not ::1:", body)
 	}
 
-	handler = realIPHandler("X-Forwarded-For", handler)
+	handler = realIPMiddleware("X-Forwarded-For")(handler)
 
 	req.Header.Set("X-Forwarded-For", httptest.DefaultRemoteAddr)
 
@@ -96,13 +94,13 @@ func helloHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Hello, %s", user)
 }
 
-func TestPanicHandler(t *testing.T) {
-	handler := panicHandler(http.HandlerFunc(ipEchoHandler))
+func TestPanicMiddleware(t *testing.T) {
+	handler := panicMiddleware(http.HandlerFunc(ipEchoHandler))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
 	testRequest(t, handler, req, http.StatusOK)
 
-	handler = panicHandler(http.HandlerFunc(helloHandler))
+	handler = panicMiddleware(http.HandlerFunc(helloHandler))
 
 	_, body := testRequest(t, handler, req, http.StatusInternalServerError)
 
@@ -111,13 +109,13 @@ func TestPanicHandler(t *testing.T) {
 	}
 }
 
-func TestStaticUserHandler(t *testing.T) {
-	handler := panicHandler(http.HandlerFunc(helloHandler))
+func TestStaticUserMiddleware(t *testing.T) {
+	handler := panicMiddleware(http.HandlerFunc(helloHandler))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
-	handler = staticUserHandler("test", http.HandlerFunc(helloHandler))
+	handler = staticUserMiddleware("test")(http.HandlerFunc(helloHandler))
 
 	_, body := testRequest(t, handler, req, http.StatusOK)
 
@@ -126,8 +124,8 @@ func TestStaticUserHandler(t *testing.T) {
 	}
 }
 
-func TestRemoteUserHandler(t *testing.T) {
-	handler := remoteUserHandler("X-Remote-User",
+func TestRemoteUserMiddleware(t *testing.T) {
+	handler := remoteUserMiddleware("X-Remote-User")(
 		http.HandlerFunc(helloHandler))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
@@ -140,174 +138,55 @@ func TestRemoteUserHandler(t *testing.T) {
 	}
 }
 
-// realerrdb mocks a very problematic db connection.
-type realerrdb struct{}
-
-func (*realerrdb) begin() (Tx, error) {
-	return nil, ErrNoTx
-}
-
-func (d *realerrdb) beginTx(ctx context.Context) (Tx, error) {
-	return d.begin()
-}
-
-// errdb mocks a problematic db connection.
-type errdb struct{}
-
-func (*errdb) begin() (Tx, error) {
-	return &errtx{}, nil
-}
-
-func (d *errdb) beginTx(ctx context.Context) (Tx, error) {
-	return d.begin()
-}
-
-// errtx mocks a problematic db transaction.
-type errtx struct {
-	Tx
-}
-
-func (*errtx) rollback() error {
-	return ErrFailedRollback
-}
-
 func TestDBHandler(t *testing.T) {
-	handler := panicHandler(dbHandler(&realerrdb{},
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Skipping db tests in short mode.")
+	}
+
+	_, db := initDB(t)
+
+	handler := panicMiddleware(dbMiddleware(db)(
 		http.HandlerFunc(ipEchoHandler)))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
-	testRequest(t, handler, req, http.StatusInternalServerError)
-
-	handler = panicHandler(dbHandler(&errdb{},
-		http.HandlerFunc(ipEchoHandler)))
-
-	// This returns 200 OK, but has an ISE since the error occurs after
-	// ipEchoHandler in dbHandler when trying to commit
-	_, body := testRequest(t, handler, req, http.StatusOK)
-
-	if !strings.HasSuffix(body,
-		http.StatusText(http.StatusInternalServerError)) {
-		t.Error("No error", body)
-	}
-}
-
-// notfounddb mocks a database that doesn't return any results.
-type notfounddb struct{}
-
-func (*notfounddb) begin() (Tx, error) {
-	return &notfoundtx{}, nil
-}
-
-func (d *notfounddb) beginTx(ctx context.Context) (Tx, error) {
-	return d.begin()
-}
-
-// notfoundtx mocks database transaction that doesn't return any results.
-type notfoundtx struct {
-	Tx
-}
-
-func (*notfoundtx) commit() error {
-	return nil
-}
-
-func (*notfoundtx) rollback() error {
-	return nil
-}
-
-func (*notfoundtx) getURLnID(name string) (string, int64, error) {
-	return "", 0, sql.ErrNoRows
-}
-
-func (*notfoundtx) getIDnUser(name string) (int64, string, error) {
-	return 0, "", sql.ErrNoRows
-}
-
-func (*notfoundtx) urlsForUser(user string) ([]map[string]string, error) {
-	return []map[string]string{}, nil
-}
-
-// fakedb mocks a somewhat working db.
-type fakedb struct{}
-
-func (*fakedb) begin() (Tx, error) {
-	return &faketx{}, nil
-}
-
-func (d *fakedb) beginTx(ctx context.Context) (Tx, error) {
-	return d.begin()
-}
-
-// faketx mocks a somewhat working transaction.
-type faketx struct {
-	notfoundtx
-}
-
-func (*faketx) addHit(id int64, ip net.IP, agent string, r *string) error {
-	return nil
-}
-
-func (*faketx) addURL(name, url, user string) error {
-	return nil
-}
-
-func (*faketx) getURLnID(name string) (string, int64, error) {
-	return "http://example.com", 0, nil
-}
-
-func (*faketx) getIDnUser(name string) (int64, string, error) {
-	return 0, "test", nil
-}
-
-func (*faketx) removeURL(name string) error {
-	return nil
-}
-
-func (*faketx) urlsForUser(user string) ([]map[string]string, error) {
-	result := []map[string]string{
-		{
-			"name": "foo",
-			"url":  "http://example.com",
-			"hits": "0",
-		},
-		{
-			"name": "bar",
-			"url":  "http://example.net",
-			"hits": "1",
-		},
-	}
-
-	return result, nil
+	testRequest(t, handler, req, http.StatusOK)
 }
 
 func TestRedirHandler(t *testing.T) {
-	// missing dbHandler
-	handler := panicHandler(withError(redirHandler))
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Skipping db tests in short mode.")
+	}
+
+	// missing dbMiddleware
+	handler := panicMiddleware(withError(redirHandler))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
-	// problematic db
-	handler = panicHandler(dbHandler(&errdb{}, withError(redirHandler)))
-
-	testRequest(t, handler, req, http.StatusInternalServerError)
+	_, db := initDB(t)
 
 	// missing URL
-	handler = panicHandler(dbHandler(&notfounddb{},
-		withError(redirHandler)))
+	handler = panicMiddleware(dbMiddleware(db)(withError(redirHandler)))
 	req = httptest.NewRequest(http.MethodGet, "/foo", nil)
 
 	testRequest(t, handler, req, http.StatusNotFound)
 
 	// everything ok
-	handler = panicHandler(dbHandler(&fakedb{}, withError(redirHandler)))
+	mux := http.NewServeMux()
+	mux.Handle("GET /{name}", chain{panicMiddleware, dbMiddleware(db)}.
+		applyE(redirHandler))
+
 	req = httptest.NewRequest(http.MethodGet, "/foo", nil)
 
 	req.Header.Set("Referer", "http://example.org")
 
-	rr, _ := testRequest(t, handler, req, http.StatusMovedPermanently)
+	rr, _ := testRequest(t, mux, req, http.StatusMovedPermanently)
 
-	if rr.Header().Get("Location") != xExampleCom {
+	if rr.Header().Get("Location") != cExampleCom {
 		t.Error("Wrong location header:", rr.Header().Get("Location"))
 	}
 
@@ -317,56 +196,58 @@ func TestRedirHandler(t *testing.T) {
 }
 
 func TestDeleteHandler(t *testing.T) {
-	// missing dbHandler
-	handler := panicHandler(withError(redirHandler))
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Skipping db tests in short mode.")
+	}
+
+	// missing dbMiddleware
+	handler := panicMiddleware(withError(redirHandler))
 	req := httptest.NewRequest(http.MethodDelete, "/foo", nil)
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
+	_, db := initDB(t)
+
 	// missing user
-	handler = panicHandler(dbHandler(&errdb{}, withError(deleteHandler)))
+	handler = panicMiddleware(dbMiddleware(db)(withError(deleteHandler)))
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
 	// empty user
-	handler = panicHandler(remoteUserHandler("X-Remote-User",
-		dbHandler(&fakedb{}, withError(deleteHandler))))
+	handler = panicMiddleware(remoteUserMiddleware("X-Remote-User")(
+		dbMiddleware(db)(withError(deleteHandler))))
 
 	testRequest(t, handler, req, http.StatusBadRequest)
 
 	// wrong user
-	handler = panicHandler(staticUserHandler("bar", dbHandler(&fakedb{},
-		withError(deleteHandler))))
+	mux := http.NewServeMux()
+	mux.Handle("DELETE /{name}", chain{
+		panicMiddleware,
+		staticUserMiddleware("bar"), dbMiddleware(db),
+	}.
+		applyE(deleteHandler))
 
-	testRequest(t, handler, req, http.StatusForbidden)
+	testRequest(t, mux, req, http.StatusForbidden)
 
 	// everythink ok
-	handler = panicHandler(staticUserHandler("test", dbHandler(&fakedb{},
-		withError(deleteHandler))))
+	mux = http.NewServeMux()
+	mux.Handle("DELETE /{name}", chain{
+		panicMiddleware,
+		staticUserMiddleware("test"), dbMiddleware(db),
+	}.
+		applyE(deleteHandler))
 
-	testRequest(t, handler, req, http.StatusOK)
-}
-
-func TestIndexHandler(t *testing.T) {
-	handler := panicHandler(staticUserHandler("test", dbHandler(&fakedb{},
-		withError(indexHandler))))
-	req := httptest.NewRequest(http.MethodGet, "/foo", nil)
-
-	testRequest(t, handler, req, http.StatusMovedPermanently)
-
-	req = httptest.NewRequest(http.MethodDelete, "/foo", nil)
-
-	testRequest(t, handler, req, http.StatusOK)
-
-	req = httptest.NewRequest(http.MethodPost, "/foo", nil)
-
-	testRequest(t, handler, req, http.StatusBadRequest)
+	testRequest(t, mux, req, http.StatusOK)
 }
 
 // postForm is a test helper for POST requests.
+//
 //nolint:unparam
 func postForm(t *testing.T, handler http.Handler, target string,
-	values url.Values, code int) (*httptest.ResponseRecorder, string) {
+	values url.Values, code int,
+) (*httptest.ResponseRecorder, string) {
 	t.Helper()
 
 	req := httptest.NewRequest(http.MethodPost, target,
@@ -378,38 +259,34 @@ func postForm(t *testing.T, handler http.Handler, target string,
 }
 
 func TestAdminHandler(t *testing.T) {
-	// missing dbHandler
-	handler := panicHandler(withError(adminHandler))
-	req := httptest.NewRequest(http.MethodGet, "/_admin", nil)
+	t.Parallel()
 
-	testRequest(t, handler, req, http.StatusInternalServerError)
+	if testing.Short() {
+		t.Skip("Skipping db tests in short mode.")
+	}
 
-	// missing user
-	handler = panicHandler(dbHandler(&errdb{},
-		withError(adminHandler)))
+	_, db := initDB(t)
 
-	testRequest(t, handler, req, http.StatusInternalServerError)
+	mux := http.NewServeMux()
+	mws := chain{
+		panicMiddleware, staticUserMiddleware("test"),
+		dbMiddleware(db),
+	}
+	mux.Handle("GET /", mws.applyE(adminGetHandler))
+	mux.Handle("POST /", mws.applyE(adminPostHandler))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
 	// ok GET request
-	handler = panicHandler(staticUserHandler("test", dbHandler(&fakedb{},
-		withError(adminHandler))))
-
-	testRequest(t, handler, req, http.StatusOK)
-
-	// wrong HTTP method
-	handler = panicHandler(staticUserHandler("test", dbHandler(&fakedb{},
-		withError(adminHandler))))
-	req = httptest.NewRequest(http.MethodHead, "/_admin", nil)
-
-	testRequest(t, handler, req, http.StatusBadRequest)
+	testRequest(t, mux, req, http.StatusOK)
 
 	// missing POST form
 	req = httptest.NewRequest(http.MethodPost, "/_admin", nil)
 
-	testRequest(t, handler, req, http.StatusBadRequest)
+	testRequest(t, mux, req, http.StatusBadRequest)
 
 	// bad URL
-	_, body := postForm(t, handler, "/_admin", url.Values{
+	_, body := postForm(t, mux, "/_admin", url.Values{
 		"name": {"baz"},
 		"url":  {":foo/bar"},
 		"user": {"test"},
@@ -420,7 +297,7 @@ func TestAdminHandler(t *testing.T) {
 	}
 
 	// missing URL
-	_, body = postForm(t, handler, "/_admin", url.Values{
+	_, body = postForm(t, mux, "/_admin", url.Values{
 		"name": {"baz"},
 		"user": {"test"},
 	}, http.StatusBadRequest)
@@ -430,7 +307,7 @@ func TestAdminHandler(t *testing.T) {
 	}
 
 	// missing name
-	_, body = postForm(t, handler, "/_admin", url.Values{
+	_, body = postForm(t, mux, "/_admin", url.Values{
 		"url":  {"http://example.com"},
 		"user": {"test"},
 	}, http.StatusBadRequest)
@@ -440,7 +317,7 @@ func TestAdminHandler(t *testing.T) {
 	}
 
 	// missing user
-	_, body = postForm(t, handler, "/_admin", url.Values{
+	_, body = postForm(t, mux, "/_admin", url.Values{
 		"name": {"baz"},
 		"url":  {"http://example.com"},
 	}, http.StatusBadRequest)
@@ -450,7 +327,7 @@ func TestAdminHandler(t *testing.T) {
 	}
 
 	// everything ok
-	postForm(t, handler, "/_admin", url.Values{
+	postForm(t, mux, "/_admin", url.Values{
 		"name": {"baz"},
 		"url":  {"http://example.com"},
 		"user": {"test"},
