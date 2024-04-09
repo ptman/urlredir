@@ -11,24 +11,64 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	nurl "net/url"
+	"net/url"
 	"time"
 
 	_ "github.com/lib/pq"
 )
 
-// key is used for storing values in context.
-type key int
+// ctxKey is used for storing values in context.
+type ctxKey int
 
 const (
 	// txKey is key for transaction in context.
-	txKey key = iota
+	txKey ctxKey = iota
 	// userKey is key for user name in context.
 	userKey
 )
 
+// must panics if error isn't nil.
+// x := must(funcThatReturnsValAndErr()).
+func must[T any](v T, err error) T { //nolint:ireturn
+	if err != nil {
+		panic(err)
+	}
+
+	return v
+}
+
+// getTx returns the transaction from the context.
+func getTx(ctx context.Context) (*sql.Tx, error) {
+	tx, ok := ctx.Value(txKey).(*sql.Tx)
+	if !ok {
+		return nil, &HTTPError{
+			Code:    http.StatusInternalServerError,
+			Err:     ErrNoTx,
+			Message: "no tx",
+		}
+	}
+
+	return tx, nil
+}
+
+// getUser returns the username from the context.
+func getUser(ctx context.Context) (string, error) {
+	user, ok := ctx.Value(userKey).(string)
+	if !ok {
+		return "", &HTTPError{
+			Code:    http.StatusInternalServerError,
+			Err:     ErrMissingUser,
+			Message: "no user",
+		}
+	}
+
+	return user, nil
+}
+
+// errorHandler is a slight modification to standard http.HandlerFunc.
 type errorHandler func(http.ResponseWriter, *http.Request) error
 
+// withError turns errorHandler to a normal http.Handler.
 func withError(h errorHandler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := h(w, r); err != nil {
@@ -47,6 +87,7 @@ func (h errorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	withError(h).ServeHTTP(w, r)
 }
 
+// middleware is an http handler that returns another http handler.
 type middleware func(http.Handler) http.Handler
 
 // chain is a middleware chain.
@@ -54,6 +95,7 @@ type middleware func(http.Handler) http.Handler
 // first(second(last(handler))).
 type chain []middleware
 
+// apply applies the middleware chain to an http handler.
 func (c chain) apply(h http.Handler) http.Handler {
 	for i := range c {
 		h = c[len(c)-1-i](h)
@@ -62,6 +104,7 @@ func (c chain) apply(h http.Handler) http.Handler {
 	return h
 }
 
+// applyE applies the middleware chain to an errorHandler.
 func (c chain) applyE(h errorHandler) http.Handler {
 	return c.apply(withError(h))
 }
@@ -169,6 +212,7 @@ func remoteUserMiddleware(header string) middleware {
 	}
 }
 
+// beginner is an interface that can start a transaction (e.g. pool and conn).
 type beginner interface {
 	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
 }
@@ -212,11 +256,7 @@ func dbMiddleware(db beginner) middleware {
 func redirHandler(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 
-	tx, ok := ctx.Value(txKey).(*sql.Tx)
-	if !ok {
-		panic("no tx")
-	}
-
+	tx := must(getTx(ctx))
 	name := r.PathValue("name")
 	agent := r.UserAgent()
 	referer := r.Referer()
@@ -229,12 +269,8 @@ func redirHandler(w http.ResponseWriter, r *http.Request) error {
 		referrer = &referer
 	}
 
-	url, urlID, err := getURLnID(ctx, tx, name)
+	u, urlID, err := getURLnID(ctx, tx, name)
 	if errors.Is(err, sql.ErrNoRows) {
-		if er := tx.Rollback(); er != nil {
-			return fmt.Errorf("failed rolling back: %w", er)
-		}
-
 		//nolint:exhaustruct
 		return &HTTPError{Code: http.StatusNotFound}
 	} else if err != nil {
@@ -247,7 +283,7 @@ func redirHandler(w http.ResponseWriter, r *http.Request) error {
 	w.Header().Set("Expires", time.Now().Add(90*time.Second).In(
 		time.UTC).Format(http.TimeFormat))
 	w.Header().Set("Content-Type", "text/html")
-	http.Redirect(w, r, url, http.StatusMovedPermanently)
+	http.Redirect(w, r, u, http.StatusMovedPermanently)
 
 	ip, err := parseIP(r.RemoteAddr)
 	if err != nil {
@@ -260,7 +296,7 @@ func redirHandler(w http.ResponseWriter, r *http.Request) error {
 
 	slog.InfoContext(ctx, "redirect", slog.String("agent", agent),
 		slog.String("referer", referer), slog.String("name", name),
-		slog.String("url", url), slog.String("remote", r.RemoteAddr))
+		slog.String("url", u), slog.String("remote", r.RemoteAddr))
 
 	return nil
 }
@@ -268,22 +304,10 @@ func redirHandler(w http.ResponseWriter, r *http.Request) error {
 // deleteHandler removes a specific URL if authorized.
 func deleteHandler(_ http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-
-	tx, ok := ctx.Value(txKey).(*sql.Tx)
-	if !ok {
-		panic("no tx")
-	}
-
-	user, ok := ctx.Value(userKey).(string)
-	if !ok {
-		panic("no user")
-	}
+	tx := must(getTx(ctx))
+	user := must(getUser(ctx))
 
 	if user == "" {
-		if er := tx.Rollback(); er != nil {
-			return fmt.Errorf("failed rolling back: %w", er)
-		}
-
 		return &HTTPError{ //nolint:exhaustruct
 			Code:    http.StatusBadRequest,
 			Message: "Missing user",
@@ -294,10 +318,6 @@ func deleteHandler(_ http.ResponseWriter, r *http.Request) error {
 
 	_, urluser, err := getIDnUser(ctx, tx, name)
 	if errors.Is(err, sql.ErrNoRows) {
-		if er := tx.Rollback(); er != nil {
-			return fmt.Errorf("failed rolling back: %w", er)
-		}
-
 		return &HTTPError{ //nolint:exhaustruct
 			Code: http.StatusNotFound,
 			Err:  err,
@@ -307,10 +327,6 @@ func deleteHandler(_ http.ResponseWriter, r *http.Request) error {
 	}
 
 	if user != urluser {
-		if er := tx.Rollback(); er != nil {
-			return fmt.Errorf("failed rolling back: %w", er)
-		}
-
 		//nolint:exhaustruct
 		return &HTTPError{Code: http.StatusForbidden}
 	}
@@ -329,16 +345,8 @@ func deleteHandler(_ http.ResponseWriter, r *http.Request) error {
 // adminGetHandler serves admin page.
 func adminGetHandler(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
-
-	tx, ok := ctx.Value(txKey).(*sql.Tx)
-	if !ok {
-		panic("no tx")
-	}
-
-	user, ok := ctx.Value(userKey).(string)
-	if !ok {
-		panic("no user")
-	}
+	tx := must(getTx(ctx))
+	user := must(getUser(ctx))
 
 	urls, err := urlsForUser(ctx, tx, user)
 	if err != nil {
@@ -367,18 +375,18 @@ func adminGetHandler(w http.ResponseWriter, r *http.Request) error {
 // validateAdminForm perform form parameter validation for admin page.
 func validateAdminForm(r *http.Request) (string, string, string, error) {
 	name := r.FormValue("name")
-	url := r.FormValue("url")
+	u := r.FormValue("url")
 	user := r.FormValue("user")
 
 	if name == "" {
 		return "", "", "", ErrMissingName
 	}
 
-	if url == "" {
+	if u == "" {
 		return "", "", "", ErrMissingURL
 	}
 
-	if _, err := nurl.Parse(url); err != nil {
+	if _, err := url.Parse(u); err != nil {
 		return "", "", "", ErrInvalidURL
 	}
 
@@ -386,29 +394,17 @@ func validateAdminForm(r *http.Request) (string, string, string, error) {
 		return "", "", "", ErrMissingUser
 	}
 
-	return name, url, user, nil
+	return name, u, user, nil
 }
 
 // adminPostHandler inserts URLs to database.
 func adminPostHandler(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
+	tx := must(getTx(ctx))
+	must(getUser(ctx))
 
-	tx, ok := ctx.Value(txKey).(*sql.Tx)
-	if !ok {
-		panic("no tx")
-	}
-
-	_, ok = ctx.Value(userKey).(string)
-	if !ok {
-		panic("no user")
-	}
-
-	name, url, user, err := validateAdminForm(r)
+	name, u, user, err := validateAdminForm(r)
 	if err != nil {
-		if er := tx.Rollback(); er != nil {
-			return fmt.Errorf("failed rolling back: %w", er)
-		}
-
 		return &HTTPError{
 			Code:    http.StatusBadRequest,
 			Err:     err,
@@ -416,7 +412,7 @@ func adminPostHandler(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	if err := addURL(ctx, tx, name, url, user); err != nil {
+	if err := addURL(ctx, tx, name, u, user); err != nil {
 		return err
 	}
 

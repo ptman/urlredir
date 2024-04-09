@@ -85,11 +85,7 @@ func TestRealIPMiddleware(t *testing.T) {
 // helloHandler responds with a greeting to the user in context.
 func helloHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
-	user, ok := ctx.Value(userKey).(string)
-	if !ok {
-		panic("no user")
-	}
+	user := must(getUser(ctx))
 
 	fmt.Fprintf(w, "Hello, %s", user)
 }
