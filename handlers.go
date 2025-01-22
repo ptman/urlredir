@@ -161,10 +161,12 @@ func panicMiddleware(next http.Handler) http.Handler {
 					err = fmt.Errorf("%w: %s", ErrUnknown,
 						t)
 				}
+
 				handleError(w, err,
 					http.StatusInternalServerError)
 			}
 		}()
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -279,7 +281,7 @@ func redirHandler(w http.ResponseWriter, r *http.Request) error {
 
 	// 301 seems to be the best combined with cache-control
 	w.Header().Set("Cache-Control", "private, max-age=90")
-	//nolint:gomnd
+	//nolint:mnd
 	w.Header().Set("Expires", time.Now().Add(90*time.Second).In(
 		time.UTC).Format(http.TimeFormat))
 	w.Header().Set("Content-Type", "text/html")

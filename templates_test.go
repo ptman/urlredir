@@ -8,6 +8,8 @@ import (
 )
 
 func TestParseAdminPage(t *testing.T) {
+	t.Parallel()
+
 	_, err := template.New("adminPage").Parse(adminPage)
 	if err != nil {
 		t.Errorf("Error parsing template: %v", err)

@@ -42,7 +42,7 @@ var (
 
 // String implements Stringer for expvar, returns JSON.
 func (c config) String() string {
-	b, err := json.Marshal(c)
+	b, err := json.Marshal(c) //nolint:musttag
 	if err != nil {
 		panic(err)
 	}
@@ -64,6 +64,7 @@ func readConfigFile(name string, conf *config) {
 // readConfig reads config from io.Reader.
 func readConfig(cfile io.Reader, conf *config) {
 	var err error
+	//nolint:musttag
 	if err = json.NewDecoder(cfile).Decode(conf); err != nil {
 		slog.Error("failed to decode config", slog.Any("err", err))
 		os.Exit(1)

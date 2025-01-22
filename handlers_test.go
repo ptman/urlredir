@@ -13,6 +13,8 @@ import (
 )
 
 func TestParseIP(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		ip string
 		ok bool
@@ -34,7 +36,7 @@ func TestParseIP(t *testing.T) {
 
 // ipEchoHandler responds with the client IP address.
 func ipEchoHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, r.RemoteAddr)
+	fmt.Fprintf(w, "%s", r.RemoteAddr)
 }
 
 // testRequest takes care of some repetitive parts of testing.
@@ -47,9 +49,9 @@ func testRequest(t *testing.T, handler http.Handler, req *http.Request,
 
 	handler.ServeHTTP(rr, req)
 
-	if rr.Code != code {
-		t.Errorf("Status %d != %s %d", rr.Code, http.StatusText(code),
-			code)
+	if got, want := rr.Code, code; got != want {
+		t.Errorf("Status: got %s %d , want %s %d", http.StatusText(got),
+			got, http.StatusText(want), want)
 	}
 
 	body, err := io.ReadAll(rr.Body)
@@ -61,14 +63,16 @@ func testRequest(t *testing.T, handler http.Handler, req *http.Request,
 }
 
 func TestRealIPMiddleware(t *testing.T) {
+	t.Parallel()
+
 	handler := http.Handler(http.HandlerFunc(ipEchoHandler))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "::1"
 
 	_, body := testRequest(t, handler, req, http.StatusOK)
 
-	if body != "::1" {
-		t.Error("RemoteAddr not ::1:", body)
+	if got, want := body, "::1"; got != want {
+		t.Errorf("remoteAddr: got %s , want %s", got, want)
 	}
 
 	handler = realIPMiddleware("X-Forwarded-For")(handler)
@@ -77,8 +81,8 @@ func TestRealIPMiddleware(t *testing.T) {
 
 	_, body = testRequest(t, handler, req, http.StatusOK)
 
-	if body != httptest.DefaultRemoteAddr {
-		t.Error("RemoteAddr not", httptest.DefaultRemoteAddr, body)
+	if got, want := body, httptest.DefaultRemoteAddr; got != want {
+		t.Errorf("RemoteAddr: got %s , want %s", got, want)
 	}
 }
 
@@ -91,6 +95,8 @@ func helloHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func TestPanicMiddleware(t *testing.T) {
+	t.Parallel()
+
 	handler := panicMiddleware(http.HandlerFunc(ipEchoHandler))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
@@ -100,12 +106,15 @@ func TestPanicMiddleware(t *testing.T) {
 
 	_, body := testRequest(t, handler, req, http.StatusInternalServerError)
 
-	if body != http.StatusText(http.StatusInternalServerError) {
-		t.Error("No error", body)
+	if got, want := body,
+		http.StatusText(http.StatusInternalServerError); got != want {
+		t.Errorf("Missing error: got %s , want %s", got, want)
 	}
 }
 
 func TestStaticUserMiddleware(t *testing.T) {
+	t.Parallel()
+
 	handler := panicMiddleware(http.HandlerFunc(helloHandler))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
@@ -115,12 +124,14 @@ func TestStaticUserMiddleware(t *testing.T) {
 
 	_, body := testRequest(t, handler, req, http.StatusOK)
 
-	if body != "Hello, test" {
-		t.Error("Wrong result:", body)
+	if got, want := body, "Hello, test"; got != want {
+		t.Errorf("Wrong result: got %s , want %s", got, want)
 	}
 }
 
 func TestRemoteUserMiddleware(t *testing.T) {
+	t.Parallel()
+
 	handler := remoteUserMiddleware("X-Remote-User")(
 		http.HandlerFunc(helloHandler))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -182,12 +193,13 @@ func TestRedirHandler(t *testing.T) {
 
 	rr, _ := testRequest(t, mux, req, http.StatusMovedPermanently)
 
-	if rr.Header().Get("Location") != cExampleCom {
-		t.Error("Wrong location header:", rr.Header().Get("Location"))
+	if got, want := rr.Header().Get("Location"), cExampleCom; got != want {
+		t.Errorf("Wrong location header: got %s , want %s", got, want)
 	}
 
-	if rr.Header().Get("Cache-Control") != "private, max-age=90" {
-		t.Error("Wrong cache header:", rr.Header().Get("Cache-Control"))
+	if got, want := rr.Header().Get("Cache-Control"),
+		"private, max-age=90"; got != want {
+		t.Errorf("Wrong cache header: got %s , want %s", got, want)
 	}
 }
 
@@ -254,7 +266,7 @@ func postForm(t *testing.T, handler http.Handler, target string,
 	return testRequest(t, handler, req, code)
 }
 
-func TestAdminHandler(t *testing.T) {
+func TestAdminHandler(t *testing.T) { //nolint:funlen
 	t.Parallel()
 
 	if testing.Short() {
@@ -288,8 +300,8 @@ func TestAdminHandler(t *testing.T) {
 		"user": {"test"},
 	}, http.StatusBadRequest)
 
-	if body != string(ErrInvalidURL) {
-		t.Error("Wrong body", body)
+	if got, want := body, string(ErrInvalidURL); got != want {
+		t.Errorf("Wrong body: got %s , want %s", got, want)
 	}
 
 	// missing URL
@@ -298,8 +310,8 @@ func TestAdminHandler(t *testing.T) {
 		"user": {"test"},
 	}, http.StatusBadRequest)
 
-	if body != string(ErrMissingURL) {
-		t.Error("Wrong body", body)
+	if got, want := body, string(ErrMissingURL); got != want {
+		t.Errorf("Wrong body: got %s , want %s", got, want)
 	}
 
 	// missing name
@@ -308,8 +320,8 @@ func TestAdminHandler(t *testing.T) {
 		"user": {"test"},
 	}, http.StatusBadRequest)
 
-	if body != string(ErrMissingName) {
-		t.Error("Wrong body", body)
+	if got, want := body, string(ErrMissingName); got != want {
+		t.Errorf("Wrong body: got %s , want %s", got, want)
 	}
 
 	// missing user
@@ -318,8 +330,8 @@ func TestAdminHandler(t *testing.T) {
 		"url":  {"http://example.com"},
 	}, http.StatusBadRequest)
 
-	if body != string(ErrMissingUser) {
-		t.Error("Wrong body", body)
+	if got, want := body, string(ErrMissingUser); got != want {
+		t.Errorf("Wrong body: got %s , want %s", got, want)
 	}
 
 	// everything ok

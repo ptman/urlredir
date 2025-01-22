@@ -46,6 +46,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestConfig(t *testing.T) {
+	t.Parallel()
+
 	conf := &config{} //nolint:exhaustruct
 	readConfig(strings.NewReader("{}"), conf)
 
@@ -56,6 +58,8 @@ func TestConfig(t *testing.T) {
 }
 
 func TestConfigFromFile(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("Skipping test in short mode.")
 	}
@@ -66,6 +70,8 @@ func TestConfigFromFile(t *testing.T) {
 }
 
 func TestSetupServeMux(t *testing.T) {
+	t.Parallel()
+
 	db, err := newPostgresDB()
 	checkErr(t, err)
 

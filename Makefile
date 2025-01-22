@@ -21,7 +21,7 @@ cover:
 
 .PHONY: lint
 lint:
-	CGO_ENABLED=0 golangci-lint run --enable-all --disable nosnakecase,ifshort,deadcode,scopelint,interfacer,maligned,exhaustivestruct,varcheck,golint,structcheck --disable varnamelen,paralleltest,funlen,depguard,ireturn,musttag
+	CGO_ENABLED=0 golangci-lint run --enable-all --disable varnamelen,depguard,exportloopref
 
 .PHONY: cloc
 cloc:
