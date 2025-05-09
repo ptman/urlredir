@@ -1,5 +1,6 @@
 // Copyright © Paul Tötterman <paul.totterman@gmail.com>. All rights reserved.
 
+// Simple, hopefully educational, URL redirector HTTP service.
 package main
 
 import (
@@ -52,7 +53,7 @@ func (c config) String() string {
 
 // readConfigFile reads config from file.
 func readConfigFile(name string, conf *config) {
-	cfile, err := os.Open(name)
+	cfile, err := os.Open(name) //nolint:gosec
 	if err != nil {
 		slog.Error("error opening config file", slog.Any("err", err))
 		os.Exit(1)

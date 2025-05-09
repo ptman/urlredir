@@ -15,6 +15,7 @@ func (e Error) Error() string {
 	return string(e)
 }
 
+// Sentinel errors.
 const (
 	ErrFailedRollback Error = "failed rollback"
 	ErrInvalidIP      Error = "invalid IP"
@@ -38,12 +39,6 @@ func (e *HTTPError) Error() string {
 	return e.Message
 }
 
-func (e *HTTPError) polish() {
-	if e.Message == "" {
-		e.Message = http.StatusText(e.Code)
-	}
-}
-
 // ServerHTTP implements http.Handler.
 func (e *HTTPError) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	e.polish()
@@ -58,4 +53,10 @@ func (e *HTTPError) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	)
 
 	http.Error(w, e.Message, e.Code)
+}
+
+func (e *HTTPError) polish() {
+	if e.Message == "" {
+		e.Message = http.StatusText(e.Code)
+	}
 }

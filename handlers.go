@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -97,8 +98,8 @@ type chain []middleware
 
 // apply applies the middleware chain to an http handler.
 func (c chain) apply(h http.Handler) http.Handler {
-	for i := range c {
-		h = c[len(c)-1-i](h)
+	for _, m := range slices.Backward(c) {
+		h = m(h)
 	}
 
 	return h

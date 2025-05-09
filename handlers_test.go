@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -36,7 +37,9 @@ func TestParseIP(t *testing.T) {
 
 // ipEchoHandler responds with the client IP address.
 func ipEchoHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "%s", r.RemoteAddr)
+	if _, err := fmt.Fprintf(w, "%s", r.RemoteAddr); err != nil {
+		slog.Error("error", slog.Any("err", err))
+	}
 }
 
 // testRequest takes care of some repetitive parts of testing.
@@ -91,7 +94,9 @@ func helloHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	user := must(getUser(ctx))
 
-	fmt.Fprintf(w, "Hello, %s", user)
+	if _, err := fmt.Fprintf(w, "Hello, %s", user); err != nil {
+		slog.Error("error", slog.Any("err", err))
+	}
 }
 
 func TestPanicMiddleware(t *testing.T) {
@@ -152,7 +157,7 @@ func TestDBHandler(t *testing.T) {
 		t.Skip("Skipping db tests in short mode.")
 	}
 
-	_, db := initDB(t)
+	db := initDB(t)
 
 	handler := panicMiddleware(dbMiddleware(db)(
 		http.HandlerFunc(ipEchoHandler)))
@@ -174,7 +179,7 @@ func TestRedirHandler(t *testing.T) {
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
-	_, db := initDB(t)
+	db := initDB(t)
 
 	// missing URL
 	handler = panicMiddleware(dbMiddleware(db)(withError(redirHandler)))
@@ -216,7 +221,7 @@ func TestDeleteHandler(t *testing.T) {
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
-	_, db := initDB(t)
+	db := initDB(t)
 
 	// missing user
 	handler = panicMiddleware(dbMiddleware(db)(withError(deleteHandler)))
@@ -273,7 +278,7 @@ func TestAdminHandler(t *testing.T) { //nolint:funlen
 		t.Skip("Skipping db tests in short mode.")
 	}
 
-	_, db := initDB(t)
+	db := initDB(t)
 
 	mux := http.NewServeMux()
 	mws := chain{

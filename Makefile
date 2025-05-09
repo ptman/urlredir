@@ -4,7 +4,8 @@
 all: test urlredir
 
 urlredir: main.go storage.go templates.go handlers.go errors.go
-	CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o $@
+	CGO_ENABLED=0 go build -tags netgo,osusergo,timetzdata \
+		    -trimpath -ldflags '-s -w' -o $@
 
 .PHONY: run
 run: urlredir
@@ -12,7 +13,7 @@ run: urlredir
 
 .PHONY: test
 test:
-	CGO_ENABLED=0 go test -v
+	CGO_ENABLED=0 go test -shuffle=on -vet=all -v
 
 .PHONY: cover
 cover:
@@ -21,7 +22,8 @@ cover:
 
 .PHONY: lint
 lint:
-	CGO_ENABLED=0 golangci-lint run --enable-all --disable varnamelen,depguard,exportloopref
+	CGO_ENABLED=0 go tool golangci-lint run --default all \
+		    --disable varnamelen,depguard
 
 .PHONY: cloc
 cloc:

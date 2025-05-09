@@ -79,7 +79,6 @@ RETURNING
 		url string
 	)
 
-	//nolint:execinquery
 	if err := tx.QueryRowContext(ctx, q, name).Scan(&id, &url); err != nil {
 		return "", 0, fmt.Errorf("failed querying DB: %w", err)
 	}

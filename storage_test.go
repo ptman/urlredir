@@ -14,47 +14,48 @@ import (
 
 const cExampleCom = "http://example.com"
 
-func initDB(tb testing.TB) (context.Context, *sql.Conn) {
+func initDB(tb testing.TB) *sql.Conn {
 	tb.Helper()
-
-	ctx := context.Background()
 
 	//nolint:gosec
 	schemaName := fmt.Sprintf("%s_%d", tb.Name(), rand.Intn(1000))
 
-	conn, err := pool.Conn(ctx)
+	//nolint:usetesting
+	conn, err := pool.Conn(context.Background())
 	checkErr(tb, err)
 
 	//nolint:perfsprint
-	_, err = conn.ExecContext(ctx, fmt.Sprintf("CREATE SCHEMA %s",
+	_, err = conn.ExecContext(tb.Context(), fmt.Sprintf("CREATE SCHEMA %s",
 		schemaName))
 	checkErr(tb, err)
 
-	_, err = conn.ExecContext(ctx,
+	_, err = conn.ExecContext(tb.Context(),
 		"SELECT pg_catalog.set_config('search_path', $1, false)",
 		schemaName)
 	checkErr(tb, err)
 
 	checkErr(tb, ensureSchema(conn))
 
-	_, err = conn.ExecContext(ctx,
+	_, err = conn.ExecContext(tb.Context(),
 		`INSERT INTO urls (name, url, "user") values ($1, $2, $3)`,
 		"foo", cExampleCom, "test")
 	checkErr(tb, err)
 
 	tb.Cleanup(func() {
-		_, err := conn.ExecContext(ctx, fmt.Sprintf(
+		//nolint:usetesting
+		_, err := conn.ExecContext(context.Background(), fmt.Sprintf(
 			"DROP SCHEMA %s CASCADE", schemaName))
 		checkErr(tb, err)
 	})
 
-	return ctx, conn
+	return conn
 }
 
-func initTx(ctx context.Context, tb testing.TB, conn *sql.Conn) *sql.Tx {
+func initTx(tb testing.TB, conn *sql.Conn) *sql.Tx {
 	tb.Helper()
 
-	tx, err := conn.BeginTx(ctx, nil)
+	//nolint:usetesting
+	tx, err := conn.BeginTx(context.Background(), nil)
 	checkErr(tb, err)
 
 	tb.Cleanup(func() {
@@ -85,10 +86,10 @@ func TestAddURL(t *testing.T) {
 		t.Skip("Skipping db tests in short mode.")
 	}
 
-	ctx, db := initDB(t)
-	tx := initTx(ctx, t, db)
+	db := initDB(t)
+	tx := initTx(t, db)
 
-	err := addURL(ctx, tx, "bar", cExampleCom, "test")
+	err := addURL(t.Context(), tx, "bar", cExampleCom, "test")
 	if err != nil {
 		t.Fatal("Error adding URL:", err)
 	}
@@ -101,10 +102,10 @@ func TestGetURLnID(t *testing.T) {
 		t.Skip("Skipping db tests in short mode.")
 	}
 
-	ctx, db := initDB(t)
-	tx := initTx(ctx, t, db)
+	db := initDB(t)
+	tx := initTx(t, db)
 
-	url, _, err := getURLnID(ctx, tx, "foo")
+	url, _, err := getURLnID(t.Context(), tx, "foo")
 	if err != nil {
 		t.Fatal("Error getting URL:", err)
 	}
@@ -121,10 +122,10 @@ func TestGetIDnUser(t *testing.T) {
 		t.Skip("Skipping db tests in short mode.")
 	}
 
-	ctx, db := initDB(t)
-	tx := initTx(ctx, t, db)
+	db := initDB(t)
+	tx := initTx(t, db)
 
-	_, user, err := getIDnUser(ctx, tx, "foo")
+	_, user, err := getIDnUser(t.Context(), tx, "foo")
 	if err != nil {
 		t.Fatal("Error getting URL:", err)
 	}
@@ -141,19 +142,19 @@ func TestRemoveURL(t *testing.T) {
 		t.Skip("Skipping db tests in short mode.")
 	}
 
-	ctx, db := initDB(t)
-	tx := initTx(ctx, t, db)
+	db := initDB(t)
+	tx := initTx(t, db)
 
-	_, _, err := getURLnID(ctx, tx, "foo")
+	_, _, err := getURLnID(t.Context(), tx, "foo")
 	if err != nil {
 		t.Fatal("Error getting URL:", err)
 	}
 
-	if err := removeURL(ctx, tx, "foo"); err != nil {
+	if err := removeURL(t.Context(), tx, "foo"); err != nil {
 		t.Fatal("Error removing URL:", err)
 	}
 
-	if _, _, err := getURLnID(ctx, tx, "foo"); !errors.Is(err,
+	if _, _, err := getURLnID(t.Context(), tx, "foo"); !errors.Is(err,
 		sql.ErrNoRows) {
 		t.Error("Error, should not find URL:", err)
 	}
@@ -166,18 +167,18 @@ func TestAddHit(t *testing.T) {
 		t.Skip("Skipping db tests in short mode.")
 	}
 
-	ctx, db := initDB(t)
-	tx := initTx(ctx, t, db)
+	db := initDB(t)
+	tx := initTx(t, db)
 
-	_, id, err := getURLnID(ctx, tx, "foo")
+	_, id, err := getURLnID(t.Context(), tx, "foo")
 	if err != nil {
 		t.Fatal("Error getting URL:", err)
 	}
 
 	referrer := cExampleCom
 
-	if err := addHit(ctx, tx, id, net.IPv4(127, 0, 0, 1), "testagent",
-		&referrer); err != nil {
+	if err := addHit(t.Context(), tx, id, net.IPv4(127, 0, 0, 1),
+		"testagent", &referrer); err != nil {
 		t.Fatal("Error adding hit:", err)
 	}
 }
@@ -189,10 +190,10 @@ func TestURLsForUser(t *testing.T) {
 		t.Skip("Skipping db tests in short mode.")
 	}
 
-	ctx, db := initDB(t)
-	tx := initTx(ctx, t, db)
+	db := initDB(t)
+	tx := initTx(t, db)
 
-	urls, err := urlsForUser(ctx, tx, "test")
+	urls, err := urlsForUser(t.Context(), tx, "test")
 	if err != nil {
 		t.Fatal("Error getting URLs:", err)
 	}
