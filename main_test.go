@@ -83,7 +83,7 @@ func TestApplyEnvOverrides(t *testing.T) {
 		t.Setenv("PORT", "1234")
 		t.Setenv("DATABASE_URL", "postgres://db.example/urlredir")
 
-		c := &config{
+		c := &config{ //nolint:exhaustruct
 			Listen: ":9999",
 			DB:     "host=/run/postgresql dbname=urlredir",
 		}
@@ -103,7 +103,7 @@ func TestApplyEnvOverrides(t *testing.T) {
 		t.Setenv("PORT", "")
 		t.Setenv("DATABASE_URL", "")
 
-		c := &config{
+		c := &config{ //nolint:exhaustruct
 			Listen: ":8080",
 			DB:     "host=/run/postgresql dbname=urlredir",
 		}
