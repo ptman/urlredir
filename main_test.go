@@ -23,7 +23,16 @@ func checkErr(tb testing.TB, err error) {
 func TestMain(m *testing.M) {
 	flag.Parse()
 
-	readConfigFile("config.json", &conf)
+	configFile := "config.json"
+	if _, err := os.Stat(configFile); err != nil {
+		if os.IsNotExist(err) {
+			configFile = "config.json.sample"
+		} else {
+			panic(err)
+		}
+	}
+
+	readConfigFile(configFile, &conf)
 
 	if !testing.Short() {
 		var err error
@@ -72,6 +81,10 @@ func TestConfigFromFile(t *testing.T) {
 func TestSetupServeMux(t *testing.T) {
 	t.Parallel()
 
+	if testing.Short() {
+		t.Skip("Skipping db tests in short mode.")
+	}
+
 	db, err := newPostgresDB()
 	checkErr(t, err)
 
@@ -80,15 +93,15 @@ func TestSetupServeMux(t *testing.T) {
 		t.Fatal("failed type assertion")
 	}
 
-	_, pattern := mux.Handler(httptest.NewRequest(http.MethodGet, "/foo",
-		nil))
+	_, pattern := mux.Handler(httptest.NewRequestWithContext(t.Context(),
+		http.MethodGet, "/foo", nil))
 
 	if pattern != "GET /{name}" {
 		t.Error("Wrong pattern:", pattern)
 	}
 
-	_, pattern = mux.Handler(httptest.NewRequest(http.MethodGet, "/_admin",
-		nil))
+	_, pattern = mux.Handler(httptest.NewRequestWithContext(t.Context(),
+		http.MethodGet, "/_admin", nil))
 
 	if pattern != "GET /_admin" {
 		t.Error("Wrong pattern:", pattern)

@@ -8,6 +8,18 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"time"
+
+	"github.com/lib/pq"
+	"github.com/lib/pq/pqerror"
+)
+
+const (
+	dbPingTimeout      = 5 * time.Second
+	dbMaxOpenConns     = 20
+	dbMaxIdleConns     = 10
+	dbConnMaxLifetime  = 5 * time.Minute
+	dbConnMaxIdleTime  = time.Minute
 )
 
 type execer interface {
@@ -51,7 +63,29 @@ func newPostgresDB() (*sql.DB, error) {
 		return nil, fmt.Errorf("failed opening DB: %w", err)
 	}
 
+	db.SetMaxOpenConns(dbMaxOpenConns)
+	db.SetMaxIdleConns(dbMaxIdleConns)
+	db.SetConnMaxLifetime(dbConnMaxLifetime)
+	db.SetConnMaxIdleTime(dbConnMaxIdleTime)
+
+	ctx, cancel := context.WithTimeout(context.Background(), dbPingTimeout)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		if closeErr := db.Close(); closeErr != nil {
+			return nil, fmt.Errorf("failed pinging DB (%w), failed closing DB (%w)",
+				err, closeErr)
+		}
+
+		return nil, fmt.Errorf("failed pinging DB: %w", err)
+	}
+
 	if err := ensureSchema(db); err != nil {
+		if closeErr := db.Close(); closeErr != nil {
+			return nil, fmt.Errorf("failed ensuring schema (%w), failed closing DB (%w)",
+				err, closeErr)
+		}
+
 		return nil, fmt.Errorf("failed ensuring schema: %w", err)
 	}
 
@@ -168,6 +202,10 @@ VALUES (
 `
 
 	if _, err := tx.ExecContext(ctx, q, name, url, user); err != nil {
+		if pq.As(err, pqerror.UniqueViolation) != nil {
+			return fmt.Errorf("%w: %w", ErrURLNameConflict, err)
+		}
+
 		return fmt.Errorf("failed querying DB: %w", err)
 	}
 

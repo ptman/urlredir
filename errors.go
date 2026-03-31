@@ -17,14 +17,15 @@ func (e Error) Error() string {
 
 // Sentinel errors.
 const (
-	ErrFailedRollback Error = "failed rollback"
-	ErrInvalidIP      Error = "invalid IP"
-	ErrInvalidURL     Error = "invalid URL"
-	ErrMissingName    Error = "missing name"
-	ErrMissingURL     Error = "missing URL"
-	ErrMissingUser    Error = "missing user"
-	ErrNoTx           Error = "no tx"
-	ErrUnknown        Error = "unknown error"
+	ErrFailedRollback  Error = "failed rollback"
+	ErrInvalidIP       Error = "invalid IP"
+	ErrInvalidURL      Error = "invalid URL"
+	ErrMissingName     Error = "missing name"
+	ErrMissingURL      Error = "missing URL"
+	ErrMissingUser     Error = "missing user"
+	ErrNoTx            Error = "no tx"
+	ErrUnknown         Error = "unknown error"
+	ErrURLNameConflict Error = "URL name conflict"
 )
 
 // HTTPError is an error returned over the network.
@@ -39,10 +40,11 @@ func (e *HTTPError) Error() string {
 	return e.Message
 }
 
-// ServerHTTP implements http.Handler.
+// ServeHTTP implements http.Handler.
 func (e *HTTPError) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	e.polish()
 
+	//nolint:gosec // Structured slog fields; request data is logged as values, not interpolated log lines.
 	slog.Error("error",
 		slog.String("method", r.Method),
 		slog.String("url", r.RequestURI),

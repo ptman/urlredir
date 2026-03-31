@@ -4,14 +4,19 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"expvar"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"runtime/debug"
+	"syscall"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -40,6 +45,8 @@ var (
 	conf      config
 	pool      *sql.DB
 )
+
+const shutdownTimeout = 15 * time.Second
 
 // String implements Stringer for expvar, returns JSON.
 func (c config) String() string {
@@ -129,6 +136,44 @@ func setupServeMux(db *sql.DB) http.Handler {
 	return mux
 }
 
+func runServer(srv *http.Server) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt,
+		syscall.SIGTERM)
+	defer stop()
+
+	errCh := make(chan error, 1)
+
+	go func() {
+		errCh <- srv.ListenAndServe()
+	}()
+
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("error listening: %w", err)
+		}
+
+		return nil
+	case <-ctx.Done():
+		slog.Info("shutdown signal received")
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(),
+		shutdownTimeout)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("error during shutdown: %w", err)
+	}
+
+	err := <-errCh
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("error after shutdown: %w", err)
+	}
+
+	return nil
+}
+
 // main should be kept small as it is hard to test.
 func main() {
 	logLevel := new(slog.LevelVar)
@@ -154,6 +199,7 @@ func main() {
 	}
 
 	mux := setupServeMux(pool)
+	cop := http.NewCrossOriginProtection()
 
 	slog.Info("Listening", slog.String("goversion", goVersion),
 		slog.String("gitRev", gitRev), slog.Any("revDate", revDate),
@@ -161,7 +207,7 @@ func main() {
 		slog.String("addr", conf.Listen))
 
 	srv := &http.Server{ //nolint:exhaustruct
-		Handler:           mux,
+		Handler:           cop.Handler(mux),
 		ReadTimeout:       time.Minute,
 		WriteTimeout:      time.Minute,
 		ReadHeaderTimeout: time.Minute,
@@ -169,8 +215,16 @@ func main() {
 		Addr:              conf.Listen,
 	}
 
-	if err := srv.ListenAndServe(); err != nil {
-		slog.Error("error listening", slog.Any("err", err))
+	if err = runServer(srv); err != nil {
+		if closeErr := pool.Close(); closeErr != nil {
+			slog.Error("error closing database", slog.Any("err", closeErr))
+		}
+
+		slog.Error("server error", slog.Any("err", err))
 		os.Exit(1)
+	}
+
+	if err := pool.Close(); err != nil {
+		slog.Error("error closing database", slog.Any("err", err))
 	}
 }

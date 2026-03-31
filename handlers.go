@@ -13,9 +13,8 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 	"time"
-
-	_ "github.com/lib/pq"
 )
 
 // ctxKey is used for storing values in context.
@@ -138,6 +137,7 @@ func loggerMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 
+		//nolint:gosec // Structured slog fields; request metadata is logged as key/value data.
 		slog.Info("req", slog.String("addr", r.RemoteAddr),
 			slog.String("method", r.Method),
 			slog.String("url", r.URL.String()),
@@ -155,6 +155,7 @@ func panicMiddleware(next http.Handler) http.Handler {
 		defer func() {
 			if r := recover(); r != nil {
 				var err error
+
 				switch t := r.(type) {
 				case error:
 					err = t
@@ -178,9 +179,18 @@ func realIPMiddleware(header string) middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter,
 			r *http.Request,
 		) {
-			realIP := r.Header.Get(header)
+			realIP := strings.TrimSpace(r.Header.Get(header))
 			if realIP != "" {
-				r.RemoteAddr = realIP
+				for part := range strings.SplitSeq(realIP, ",") {
+					ip, err := parseIP(strings.TrimSpace(part))
+					if err != nil {
+						continue
+					}
+
+					r.RemoteAddr = ip.String()
+
+					break
+				}
 			}
 
 			next.ServeHTTP(w, r)
@@ -236,7 +246,7 @@ func dbMiddleware(db beginner) middleware {
 			defer func() {
 				if r := recover(); r != nil {
 					err = tx.Rollback()
-					if err != nil {
+					if err != nil && !errors.Is(err, sql.ErrTxDone) {
 						panic(err)
 					}
 
@@ -248,8 +258,13 @@ func dbMiddleware(db beginner) middleware {
 				txKey, tx)))
 
 			err = tx.Commit()
-			if err != nil && !errors.Is(err, sql.ErrTxDone) {
-				panic(err)
+			if err == nil || errors.Is(err, sql.ErrTxDone) {
+				return
+			}
+
+			rollbackErr := tx.Rollback()
+			if rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+				panic(rollbackErr)
 			}
 		})
 	}
@@ -264,6 +279,7 @@ func redirHandler(w http.ResponseWriter, r *http.Request) error {
 	agent := r.UserAgent()
 	referer := r.Referer()
 
+	//nolint:gosec // Structured slog fields; path value is logged as a field.
 	slog.Debug("REDIR", slog.String("name", name))
 
 	var referrer *string
@@ -280,14 +296,6 @@ func redirHandler(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	// 301 seems to be the best combined with cache-control
-	w.Header().Set("Cache-Control", "private, max-age=90")
-	//nolint:mnd
-	w.Header().Set("Expires", time.Now().Add(90*time.Second).In(
-		time.UTC).Format(http.TimeFormat))
-	w.Header().Set("Content-Type", "text/html")
-	http.Redirect(w, r, u, http.StatusMovedPermanently)
-
 	ip, err := parseIP(r.RemoteAddr)
 	if err != nil {
 		return err
@@ -296,6 +304,14 @@ func redirHandler(w http.ResponseWriter, r *http.Request) error {
 	if err = addHit(ctx, tx, urlID, ip, agent, referrer); err != nil {
 		return err
 	}
+
+	// 301 seems to be the best combined with cache-control
+	w.Header().Set("Cache-Control", "private, max-age=90")
+	//nolint:mnd
+	w.Header().Set("Expires", time.Now().Add(90*time.Second).In(
+		time.UTC).Format(http.TimeFormat))
+	w.Header().Set("Content-Type", "text/html")
+	http.Redirect(w, r, u, http.StatusMovedPermanently)
 
 	slog.InfoContext(ctx, "redirect", slog.String("agent", agent),
 		slog.String("referer", referer), slog.String("name", name),
@@ -375,7 +391,7 @@ func adminGetHandler(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// validateAdminForm perform form parameter validation for admin page.
+// validateAdminForm performs form parameter validation for admin page.
 func validateAdminForm(r *http.Request) (string, string, string, error) {
 	name := r.FormValue("name")
 	u := r.FormValue("url")
@@ -389,12 +405,17 @@ func validateAdminForm(r *http.Request) (string, string, string, error) {
 		return "", "", "", ErrMissingURL
 	}
 
-	if _, err := url.Parse(u); err != nil {
+	parsed, err := url.Parse(u)
+	if err != nil {
 		return "", "", "", ErrInvalidURL
 	}
 
-	if user == "" {
-		return "", "", "", ErrMissingUser
+	if !parsed.IsAbs() || parsed.Host == "" {
+		return "", "", "", ErrInvalidURL
+	}
+
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", "", "", ErrInvalidURL
 	}
 
 	return name, u, user, nil
@@ -404,9 +425,9 @@ func validateAdminForm(r *http.Request) (string, string, string, error) {
 func adminPostHandler(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	tx := must(getTx(ctx))
-	must(getUser(ctx))
+	ctxUser, ctxErr := getUser(ctx)
 
-	name, u, user, err := validateAdminForm(r)
+	name, u, formUser, err := validateAdminForm(r)
 	if err != nil {
 		return &HTTPError{
 			Code:    http.StatusBadRequest,
@@ -415,7 +436,28 @@ func adminPostHandler(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
+	user := ctxUser
+	if ctxErr != nil || user == "" {
+		user = formUser
+	}
+
+	if user == "" {
+		return &HTTPError{
+			Code:    http.StatusBadRequest,
+			Err:     ErrMissingUser,
+			Message: ErrMissingUser.Error(),
+		}
+	}
+
 	if err := addURL(ctx, tx, name, u, user); err != nil {
+		if errors.Is(err, ErrURLNameConflict) {
+			return &HTTPError{
+				Code:    http.StatusConflict,
+				Err:     err,
+				Message: "name already exists",
+			}
+		}
+
 		return err
 	}
 

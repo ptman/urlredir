@@ -20,7 +20,6 @@ func initDB(tb testing.TB) *sql.Conn {
 	//nolint:gosec
 	schemaName := fmt.Sprintf("%s_%d", tb.Name(), rand.Intn(1000))
 
-	//nolint:usetesting
 	conn, err := pool.Conn(context.Background())
 	checkErr(tb, err)
 
@@ -42,7 +41,6 @@ func initDB(tb testing.TB) *sql.Conn {
 	checkErr(tb, err)
 
 	tb.Cleanup(func() {
-		//nolint:usetesting
 		_, err := conn.ExecContext(context.Background(), fmt.Sprintf(
 			"DROP SCHEMA %s CASCADE", schemaName))
 		checkErr(tb, err)
@@ -54,13 +52,14 @@ func initDB(tb testing.TB) *sql.Conn {
 func initTx(tb testing.TB, conn *sql.Conn) *sql.Tx {
 	tb.Helper()
 
-	//nolint:usetesting
 	tx, err := conn.BeginTx(context.Background(), nil)
 	checkErr(tb, err)
 
 	tb.Cleanup(func() {
-		err := tx.Commit()
-		checkErr(tb, err)
+		err := tx.Rollback()
+		if err != nil && !errors.Is(err, sql.ErrTxDone) {
+			checkErr(tb, err)
+		}
 	})
 
 	return tx
@@ -92,6 +91,11 @@ func TestAddURL(t *testing.T) {
 	err := addURL(t.Context(), tx, "bar", cExampleCom, "test")
 	if err != nil {
 		t.Fatal("Error adding URL:", err)
+	}
+
+	err = addURL(t.Context(), tx, "foo", cExampleCom, "test")
+	if !errors.Is(err, ErrURLNameConflict) {
+		t.Fatalf("Error should indicate name conflict, got: %v", err)
 	}
 }
 

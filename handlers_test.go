@@ -37,6 +37,7 @@ func TestParseIP(t *testing.T) {
 
 // ipEchoHandler responds with the client IP address.
 func ipEchoHandler(w http.ResponseWriter, r *http.Request) {
+	//nolint:gosec // Test helper only: echoes request remote address for middleware behavior checks.
 	if _, err := fmt.Fprintf(w, "%s", r.RemoteAddr); err != nil {
 		slog.Error("error", slog.Any("err", err))
 	}
@@ -68,23 +69,56 @@ func testRequest(t *testing.T, handler http.Handler, req *http.Request,
 func TestRealIPMiddleware(t *testing.T) {
 	t.Parallel()
 
+	const cLoopback = "::1"
+
 	handler := http.Handler(http.HandlerFunc(ipEchoHandler))
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.RemoteAddr = "::1"
+	req := httptest.NewRequestWithContext(t.Context(),
+		http.MethodGet, "/", nil)
+	req.RemoteAddr = cLoopback
 
 	_, body := testRequest(t, handler, req, http.StatusOK)
 
-	if got, want := body, "::1"; got != want {
+	if got, want := body, cLoopback; got != want {
 		t.Errorf("remoteAddr: got %s , want %s", got, want)
 	}
 
 	handler = realIPMiddleware("X-Forwarded-For")(handler)
 
+	req = httptest.NewRequestWithContext(t.Context(),
+		http.MethodGet, "/", nil)
+	req.RemoteAddr = cLoopback
 	req.Header.Set("X-Forwarded-For", httptest.DefaultRemoteAddr)
 
 	_, body = testRequest(t, handler, req, http.StatusOK)
 
-	if got, want := body, httptest.DefaultRemoteAddr; got != want {
+	ip, err := parseIP(httptest.DefaultRemoteAddr)
+	if err != nil {
+		t.Fatalf("Error parsing expected default remote addr: %v", err)
+	}
+
+	if got, want := body, ip.String(); got != want {
+		t.Errorf("RemoteAddr: got %s , want %s", got, want)
+	}
+
+	req = httptest.NewRequestWithContext(t.Context(),
+		http.MethodGet, "/", nil)
+	req.RemoteAddr = cLoopback
+	req.Header.Set("X-Forwarded-For", "203.0.113.4, 10.0.0.1")
+
+	_, body = testRequest(t, handler, req, http.StatusOK)
+
+	if got, want := body, "203.0.113.4"; got != want {
+		t.Errorf("RemoteAddr: got %s , want %s", got, want)
+	}
+
+	req = httptest.NewRequestWithContext(t.Context(),
+		http.MethodGet, "/", nil)
+	req.RemoteAddr = cLoopback
+	req.Header.Set("X-Forwarded-For", "not-an-ip")
+
+	_, body = testRequest(t, handler, req, http.StatusOK)
+
+	if got, want := body, cLoopback; got != want {
 		t.Errorf("RemoteAddr: got %s , want %s", got, want)
 	}
 }
@@ -103,7 +137,8 @@ func TestPanicMiddleware(t *testing.T) {
 	t.Parallel()
 
 	handler := panicMiddleware(http.HandlerFunc(ipEchoHandler))
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(),
+		http.MethodGet, "/", nil)
 
 	testRequest(t, handler, req, http.StatusOK)
 
@@ -121,7 +156,8 @@ func TestStaticUserMiddleware(t *testing.T) {
 	t.Parallel()
 
 	handler := panicMiddleware(http.HandlerFunc(helloHandler))
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(),
+		http.MethodGet, "/", nil)
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
@@ -139,7 +175,8 @@ func TestRemoteUserMiddleware(t *testing.T) {
 
 	handler := remoteUserMiddleware("X-Remote-User")(
 		http.HandlerFunc(helloHandler))
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(),
+		http.MethodGet, "/", nil)
 
 	req.Header.Set("X-Remote-User", "foo")
 
@@ -161,7 +198,8 @@ func TestDBHandler(t *testing.T) {
 
 	handler := panicMiddleware(dbMiddleware(db)(
 		http.HandlerFunc(ipEchoHandler)))
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(),
+		http.MethodGet, "/", nil)
 
 	testRequest(t, handler, req, http.StatusOK)
 }
@@ -175,7 +213,8 @@ func TestRedirHandler(t *testing.T) {
 
 	// missing dbMiddleware
 	handler := panicMiddleware(withError(redirHandler))
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(),
+		http.MethodGet, "/", nil)
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
@@ -183,7 +222,8 @@ func TestRedirHandler(t *testing.T) {
 
 	// missing URL
 	handler = panicMiddleware(dbMiddleware(db)(withError(redirHandler)))
-	req = httptest.NewRequest(http.MethodGet, "/foo", nil)
+	req = httptest.NewRequestWithContext(t.Context(),
+		http.MethodGet, "/foo", nil)
 
 	testRequest(t, handler, req, http.StatusNotFound)
 
@@ -192,7 +232,8 @@ func TestRedirHandler(t *testing.T) {
 	mux.Handle("GET /{name}", chain{panicMiddleware, dbMiddleware(db)}.
 		applyE(redirHandler))
 
-	req = httptest.NewRequest(http.MethodGet, "/foo", nil)
+	req = httptest.NewRequestWithContext(t.Context(),
+		http.MethodGet, "/foo", nil)
 
 	req.Header.Set("Referer", "http://example.org")
 
@@ -217,7 +258,8 @@ func TestDeleteHandler(t *testing.T) {
 
 	// missing dbMiddleware
 	handler := panicMiddleware(withError(redirHandler))
-	req := httptest.NewRequest(http.MethodDelete, "/foo", nil)
+	req := httptest.NewRequestWithContext(t.Context(),
+		http.MethodDelete, "/foo", nil)
 
 	testRequest(t, handler, req, http.StatusInternalServerError)
 
@@ -263,7 +305,7 @@ func postForm(t *testing.T, handler http.Handler, target string,
 ) (*httptest.ResponseRecorder, string) {
 	t.Helper()
 
-	req := httptest.NewRequest(http.MethodPost, target,
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, target,
 		strings.NewReader(values.Encode()))
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -288,13 +330,15 @@ func TestAdminHandler(t *testing.T) { //nolint:funlen
 	mux.Handle("GET /", mws.applyE(adminGetHandler))
 	mux.Handle("POST /", mws.applyE(adminPostHandler))
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(),
+		http.MethodGet, "/", nil)
 
 	// ok GET request
 	testRequest(t, mux, req, http.StatusOK)
 
 	// missing POST form
-	req = httptest.NewRequest(http.MethodPost, "/_admin", nil)
+	req = httptest.NewRequestWithContext(t.Context(),
+		http.MethodPost, "/_admin", nil)
 
 	testRequest(t, mux, req, http.StatusBadRequest)
 
@@ -302,6 +346,28 @@ func TestAdminHandler(t *testing.T) { //nolint:funlen
 	_, body := postForm(t, mux, "/_admin", url.Values{
 		"name": {"baz"},
 		"url":  {":foo/bar"},
+		"user": {"test"},
+	}, http.StatusBadRequest)
+
+	if got, want := body, string(ErrInvalidURL); got != want {
+		t.Errorf("Wrong body: got %s , want %s", got, want)
+	}
+
+	// relative URL
+	_, body = postForm(t, mux, "/_admin", url.Values{
+		"name": {"baz"},
+		"url":  {"/foo"},
+		"user": {"test"},
+	}, http.StatusBadRequest)
+
+	if got, want := body, string(ErrInvalidURL); got != want {
+		t.Errorf("Wrong body: got %s , want %s", got, want)
+	}
+
+	// non-http scheme
+	_, body = postForm(t, mux, "/_admin", url.Values{
+		"name": {"baz"},
+		"url":  {"ftp://example.com"},
 		"user": {"test"},
 	}, http.StatusBadRequest)
 
@@ -330,8 +396,18 @@ func TestAdminHandler(t *testing.T) { //nolint:funlen
 	}
 
 	// missing user
-	_, body = postForm(t, mux, "/_admin", url.Values{
+	postForm(t, mux, "/_admin", url.Values{
 		"name": {"baz"},
+		"url":  {"http://example.com"},
+	}, http.StatusSeeOther)
+
+	// missing user (no user in context and form)
+	muxNoUser := http.NewServeMux()
+	muxNoUser.Handle("POST /", chain{panicMiddleware, dbMiddleware(db)}.
+		applyE(adminPostHandler))
+
+	_, body = postForm(t, muxNoUser, "/_admin", url.Values{
+		"name": {"nobody"},
 		"url":  {"http://example.com"},
 	}, http.StatusBadRequest)
 
@@ -341,8 +417,19 @@ func TestAdminHandler(t *testing.T) { //nolint:funlen
 
 	// everything ok
 	postForm(t, mux, "/_admin", url.Values{
-		"name": {"baz"},
+		"name": {"qux"},
 		"url":  {"http://example.com"},
 		"user": {"test"},
 	}, http.StatusSeeOther)
+
+	// duplicate name
+	_, body = postForm(t, mux, "/_admin", url.Values{
+		"name": {"foo"},
+		"url":  {"http://example.net"},
+		"user": {"test"},
+	}, http.StatusConflict)
+
+	if got, want := body, "name already exists"; got != want {
+		t.Errorf("Wrong body: got '%s' , want '%s'", got, want)
+	}
 }
