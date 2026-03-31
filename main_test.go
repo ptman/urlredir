@@ -78,6 +78,48 @@ func TestConfigFromFile(t *testing.T) {
 	readConfigFile("config.json.sample", conf)
 }
 
+func TestApplyEnvOverrides(t *testing.T) {
+	t.Run("overrides when env vars are set", func(t *testing.T) {
+		t.Setenv("PORT", "1234")
+		t.Setenv("DATABASE_URL", "postgres://db.example/urlredir")
+
+		c := &config{
+			Listen: ":9999",
+			DB:     "host=/run/postgresql dbname=urlredir",
+		}
+
+		applyEnvOverrides(c)
+
+		if c.Listen != ":1234" {
+			t.Fatalf("Listen = %q, want %q", c.Listen, ":1234")
+		}
+
+		if c.DB != "postgres://db.example/urlredir" {
+			t.Fatalf("DB = %q, want %q", c.DB, "postgres://db.example/urlredir")
+		}
+	})
+
+	t.Run("keeps config when env vars are unset", func(t *testing.T) {
+		t.Setenv("PORT", "")
+		t.Setenv("DATABASE_URL", "")
+
+		c := &config{
+			Listen: ":8080",
+			DB:     "host=/run/postgresql dbname=urlredir",
+		}
+
+		applyEnvOverrides(c)
+
+		if c.Listen != ":8080" {
+			t.Fatalf("Listen = %q, want %q", c.Listen, ":8080")
+		}
+
+		if c.DB != "host=/run/postgresql dbname=urlredir" {
+			t.Fatalf("DB = %q, want %q", c.DB, "host=/run/postgresql dbname=urlredir")
+		}
+	})
+}
+
 func TestSetupServeMux(t *testing.T) {
 	t.Parallel()
 

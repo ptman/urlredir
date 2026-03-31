@@ -103,6 +103,17 @@ func readConfig(cfile io.Reader, conf *config) {
 	}
 }
 
+// applyEnvOverrides updates config fields from environment variables when set.
+func applyEnvOverrides(conf *config) {
+	if port := os.Getenv("PORT"); port != "" {
+		conf.Listen = ":" + port
+	}
+
+	if databaseURL := os.Getenv("DATABASE_URL"); databaseURL != "" {
+		conf.DB = databaseURL
+	}
+}
+
 // setupServeMux returns a set up http.Handler.
 func setupServeMux(db *sql.DB) http.Handler {
 	mux := http.NewServeMux()
@@ -187,6 +198,7 @@ func main() {
 	var err error
 
 	readConfigFile("config.json", &conf)
+	applyEnvOverrides(&conf)
 
 	if conf.Debug {
 		logLevel.Set(slog.LevelDebug)
