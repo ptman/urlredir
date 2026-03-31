@@ -1,5 +1,38 @@
-image: golang
+image: golang:1.26
+
+stages:
+  - lint
+  - test
+  - integration
+
+lint:
+  stage: lint
+  script:
+    - make lint
 
 test:
+  stage: test
   script:
     - make test
+
+test-integration:
+  stage: integration
+  services:
+    - name: postgres:16
+      alias: postgres
+  variables:
+    POSTGRES_DB: postgres
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+  script:
+    - |
+      cat > config.json <<'EOF'
+      {
+          "Listen": ":8080",
+          "DB": "host=postgres user=postgres password=postgres dbname=postgres sslmode=disable",
+          "Debug": false,
+          "RealIPHeader": "X-Forwarded-For",
+          "RemoteUserHeader": "X-Remote-User"
+      }
+      EOF
+    - make test-all

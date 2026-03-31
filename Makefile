@@ -13,6 +13,10 @@ run: urlredir
 
 .PHONY: test
 test:
+	CGO_ENABLED=0 go test -short -shuffle=on -vet=all -v
+
+.PHONY: test-all
+test-all:
 	CGO_ENABLED=0 go test -shuffle=on -vet=all -v
 
 .PHONY: cover
@@ -23,7 +27,8 @@ cover:
 .PHONY: lint
 lint:
 	CGO_ENABLED=0 go tool golangci-lint run --default all \
-		    --disable varnamelen,depguard
+		    --disable varnamelen,depguard,wsl,noinlineerr \
+		    --enable wsl_v5
 
 .PHONY: cloc
 cloc:

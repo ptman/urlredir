@@ -26,9 +26,13 @@ Run:
 
 ## Testing
 
-The test-target runs only a subset of tests, but works without config:
+Unit tests run in short mode and work without local Postgres/config:
 
     make test
+
+Integration tests require config and a reachable Postgres database:
+
+    make test-all
 
 Coverage needs the config (for database connection details):
 
