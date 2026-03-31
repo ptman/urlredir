@@ -361,7 +361,7 @@ func adminGetHandler(w http.ResponseWriter, r *http.Request) error {
 		return fmt.Errorf("failed parsing template: %w", err)
 	}
 
-	params := map[string]interface{}{
+	params := map[string]any{
 		"path": r.URL.Path,
 		"user": user,
 		"urls": urls,
